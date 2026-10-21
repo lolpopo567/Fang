@@ -10,7 +10,8 @@ An app for deaf and hard-of-hearing people in Thailand. It's one installable web
 | **Type to speak** | Works everywhere. A Thai voice needs the device to have one installed. If none is installed it falls back to large text. | `speechSynthesis` plus a full-screen large-text card and quick phrases (built-in and your own saved ones). |
 | **Sign camera: hand tracking** | Works. Tested with a fake camera feeding a real hand photo, and 1 hand was detected. | MediaPipe Hand Landmarker (v1.1.1) runs **on the device**. Its files are bundled in `vendor/` and `models/`, so after the first load no network is needed. |
 | **Recognizer interface** (offline / online / hybrid) | Wiring works, but **no Thai Sign Language model exists yet**, so the screen says so. | `js/sign/recognizer.js`. Online mode posts landmarks only (never video) to a URL you configure. |
-| **Dataset recorder** | Works. | Records 2-second landmark sequences with a label and exports JSON (`fang-handframes-v1`). No video is stored. |
+| **Sign model support** | Works. Tested with synthetic data only; there is no real model yet. | `training/train.py` (numpy only) trains a small classifier. The app loads `models/tsl-model.json` if it exists. Datasets are reviewed in [docs/datasets.md](docs/datasets.md). |
+| **Dataset recorder** | Works. | Records 2-second landmark sequences with a label and an optional signer code, and exports JSON (`fang-handframes-v1`). No video is stored. |
 
 ## What it does NOT do yet
 

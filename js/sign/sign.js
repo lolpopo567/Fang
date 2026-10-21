@@ -2,9 +2,13 @@ import { t } from '../i18n.js';
 import { load, save, download } from '../store.js';
 import { toHandFrame, FrameWindow } from './features.js';
 import { OfflineRecognizer, OnlineRecognizer, RecognizerHub, isUncertain } from './recognizer.js';
+import { MlpModel } from './model.js';
 
 const WASM_PATH = new URL('../../vendor/mediapipe/wasm', import.meta.url).href;
 const MODEL_PATH = new URL('../../models/hand_landmarker.task', import.meta.url).href;
+const SIGN_MODEL_PATH = new URL('../../models/tsl-model.json', import.meta.url).href;
+// Training data marks "no sign" (resting, transitions) with these labels; they are never shown as words.
+const NO_SIGN_LABELS = new Set(['null_act', '_none']);
 const PREDICT_EVERY_MS = 500;
 const RECORD_MS = 2000;
 
@@ -58,8 +62,18 @@ export function initSign() {
   const recStatus = document.getElementById('rec-status');
 
   const online = new OnlineRecognizer(load('fang.signEndpoint', ''));
-  const hub = new RecognizerHub(new OfflineRecognizer(), online);
+  const offline = new OfflineRecognizer();
+  const hub = new RecognizerHub(offline, online);
   const window_ = new FrameWindow(30);
+
+  // A trained model is optional: without models/tsl-model.json the app reports "no model".
+  MlpModel.load(SIGN_MODEL_PATH)
+    .then((model) => {
+      if (!model) return;
+      offline.model = model;
+      window_.size = model.window;
+    })
+    .catch(() => {});
 
   let stream = null;
   let facing = 'user';
@@ -110,6 +124,12 @@ export function initSign() {
     if (msg) {
       resultLabel.textContent = '—';
       resultMeta.textContent = t(msg) + (p.error ? ` (${p.error})` : '');
+      resultLabel.classList.remove('uncertain');
+      return;
+    }
+    if (NO_SIGN_LABELS.has(p.label)) {
+      resultLabel.textContent = '—';
+      resultMeta.textContent = t('sign.noSign');
       resultLabel.classList.remove('uncertain');
       return;
     }
@@ -244,6 +264,9 @@ export function initSign() {
 
   // Dataset sample recorder: landmarks only, no video.
   const recLabel = document.getElementById('rec-label');
+  const recSigner = document.getElementById('rec-signer');
+  recSigner.value = load('fang.signer', '');
+  recSigner.addEventListener('change', () => save('fang.signer', recSigner.value.trim()));
   const showCount = () => { recStatus.textContent = t('rec.count') + samples.length; };
 
   document.getElementById('rec-start').addEventListener('click', () => {
@@ -263,6 +286,7 @@ export function initSign() {
       const t0 = r.frames[0].t;
       samples.push({
         label: r.label,
+        signer: recSigner.value.trim() || undefined,
         recordedAt: new Date().toISOString(),
         frames: r.frames.map((f) => ({
           t: Math.round(f.t - t0),
