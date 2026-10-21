@@ -8,9 +8,9 @@ const MIDDLE_MCP = 9;
 /**
  * A HandFrame is the structured landmark record handed to recognizers:
  * { t: ms timestamp, hands: [{ handedness: 'Left'|'Right', score, landmarks: [[x,y,z] x21] }] }
- * Coordinates are MediaPipe image-normalized (0..1 across the frame).
+ * Coordinates are MediaPipe image-normalized (0..1 across the frame); aspect is frame width / height.
  */
-export function toHandFrame(result, t) {
+export function toHandFrame(result, t, aspect = 1) {
   const hands = (result?.landmarks ?? []).map((lms, i) => {
     const cat = result.handedness?.[i]?.[0] ?? result.handednesses?.[i]?.[0];
     return {
@@ -19,15 +19,18 @@ export function toHandFrame(result, t) {
       landmarks: lms.map((p) => [p.x, p.y, p.z])
     };
   });
-  return { t, hands };
+  return { t, aspect, hands };
 }
 
 /**
  * Translate to the wrist and scale by wrist-to-middle-knuckle distance, so the
  * features do not depend on where the hand is in the frame or how far it is from the camera.
+ * MediaPipe x and z are in units of frame width and y of height, so x and z are first rescaled
+ * by the aspect ratio; a portrait phone and a landscape webcam then give the same hand shape.
  */
-export function normalizeHand(landmarks) {
+export function normalizeHand(landmarks, aspect = 1) {
   if (!landmarks || landmarks.length !== NUM_LANDMARKS) return null;
+  landmarks = landmarks.map(([x, y, z]) => [x * aspect, y, z * aspect]);
   const [wx, wy, wz] = landmarks[WRIST];
   const [mx, my, mz] = landmarks[MIDDLE_MCP];
   const scale = Math.hypot(mx - wx, my - wy, mz - wz) || 1;
@@ -43,7 +46,7 @@ export function frameVector(frame) {
   for (const hand of frame.hands) {
     const slot = hand.handedness === 'Left' ? 0 : hand.handedness === 'Right' ? 1 : null;
     if (slot == null) continue;
-    const norm = normalizeHand(hand.landmarks);
+    const norm = normalizeHand(hand.landmarks, frame.aspect || 1);
     if (!norm) continue;
     const base = slot * NUM_LANDMARKS * 3;
     norm.forEach(([x, y, z], i) => {

@@ -43,7 +43,12 @@ try {
   if (video) {
     await page.waitForFunction(() => Number(document.getElementById('stat-hands').textContent) > 0, null, { timeout: 60000 });
   }
-  await page.waitForFunction(() => document.getElementById('result-meta').textContent.includes('ยังไม่มีโมเดล'), null, { timeout: 60000 });
+  // models/tsl-model.json is bundled, so the sign result shows a prediction or "no sign", never "no model".
+  await page.waitForFunction(() => {
+    const meta = document.getElementById('result-meta').textContent;
+    return meta && !meta.includes('ยังไม่มีโมเดล');
+  }, null, { timeout: 60000 });
+  console.log('sign result:', await page.textContent('#result-label'), await page.textContent('#result-meta'));
 
   if (video) {
     await page.click('.recorder summary');

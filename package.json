@@ -4,7 +4,7 @@
   "description": "Fang: Thai captions, type-to-speak and TSL camera prototype",
   "scripts": {
     "start": "npx --yes http-server -c-1 -p 8080 .",
-    "test": "node --test tests/unit.test.mjs",
+    "test": "node --test tests/unit.test.mjs tests/training.test.mjs",
     "e2e": "node tests/e2e.mjs"
   },
   "author": "",

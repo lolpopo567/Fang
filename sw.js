@@ -1,6 +1,6 @@
 // Offline support: app shell is precached; the large MediaPipe files are cached the first time
 // the camera is used, so later visits work without a connection.
-const CACHE = 'fang-v1';
+const CACHE = 'fang-v3';
 const SHELL = [
   './',
   'index.html',
@@ -13,6 +13,7 @@ const SHELL = [
   'js/sign/sign.js',
   'js/sign/features.js',
   'js/sign/recognizer.js',
+  'js/sign/model.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',

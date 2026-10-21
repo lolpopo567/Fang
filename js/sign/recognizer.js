@@ -1,6 +1,7 @@
 // Recognizer interface. Every recognizer takes a window of HandFrames and returns a Prediction:
 //   { status: 'ok' | 'no_model' | 'not_configured' | 'error',
-//     label?: string,            // Thai text for the recognized sign
+//     label?: string,            // class id of the recognized sign
+//     text?: string,             // Thai text to show for it (defaults to label)
 //     confidence?: number,       // 0..1, NOT a guarantee of correctness
 //     alternatives?: [{ label, confidence }],
 //     source: 'offline' | 'online' }
