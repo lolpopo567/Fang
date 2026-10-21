@@ -4,6 +4,8 @@
 import { frameVector } from './features.js';
 
 export const MODEL_FORMAT = 'fang-mlp-v1';
+export const NO_HANDS = '_none';
+const MIN_HAND_FRAMES = 0.3;
 
 /**
  * Summarizes a window of HandFrames into one vector:
@@ -48,8 +50,13 @@ export class MlpModel {
     return new MlpModel(await res.json());
   }
 
-  /** Returns { label, confidence, alternatives } with probabilities from softmax. */
+  /** Returns { label, text, confidence, alternatives } with probabilities from softmax; text is the Thai word to show. */
   async predict(frames) {
+    // The model never saw empty windows, so without hands in view it would still name a sign.
+    const withHands = frames.filter((f) => f.hands.length).length;
+    if (withHands < MIN_HAND_FRAMES * frames.length) {
+      return { label: NO_HANDS, text: NO_HANDS, confidence: 1, alternatives: [] };
+    }
     const x = sequenceFeatures(frames).map((v, i) => (v - this.mean[i]) / this.std[i]);
     const h = this.b1.map((b, k) => Math.max(0, b + dot(this.W1[k], x)));
     const logits = this.b2.map((b, c) => b + dot(this.W2[c], h));
@@ -57,9 +64,9 @@ export class MlpModel {
     const exps = logits.map((l) => Math.exp(l - max));
     const sum = exps.reduce((a, b) => a + b, 0);
     const ranked = exps
-      .map((e, c) => ({ label: this.labels[c], confidence: e / sum }))
+      .map((e, c) => ({ label: this.labels[c], text: this.display?.[this.labels[c]] ?? this.labels[c], confidence: e / sum }))
       .sort((a, b) => b.confidence - a.confidence);
-    return { label: ranked[0].label, confidence: ranked[0].confidence, alternatives: ranked.slice(1, 4) };
+    return { ...ranked[0], alternatives: ranked.slice(1, 4) };
   }
 }
 

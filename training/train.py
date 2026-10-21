@@ -147,7 +147,8 @@ def main():
     train, test, split_kind = split(samples, args.test_frac, rng)
     x_tr, y_tr = featurize(train, labels, args.window, args.crops, rng)
     mean = x_tr.mean(0)
-    std = x_tr.std(0) + 1e-6
+    std = x_tr.std(0)
+    std[std < 1e-4] = 1.0  # constant features (e.g. the wrist, always 0 after normalizing); avoids 0/0 in the app
     params = train_mlp((x_tr - mean) / std, y_tr, len(labels), args.hidden, args.epochs, args.lr, args.weight_decay, args.seed)
 
     report = {

@@ -11,9 +11,12 @@ MIDDLE_MCP = 9
 FRAME_DIM = 2 * NUM_LANDMARKS * 3 + 2  # 128
 
 
-def normalize_hand(landmarks):
+def normalize_hand(landmarks, aspect=1.0):
+    """aspect = frame width / height. MediaPipe x and z are in units of frame width, y of height,
+    so x and z are rescaled to height units first; a portrait phone and a landscape webcam then agree."""
     if not landmarks or len(landmarks) != NUM_LANDMARKS:
         return None
+    landmarks = [(x * aspect, y, z * aspect) for x, y, z in landmarks]
     wx, wy, wz = landmarks[WRIST]
     mx, my, mz = landmarks[MIDDLE_MCP]
     scale = math.sqrt((mx - wx) ** 2 + (my - wy) ** 2 + (mz - wz) ** 2) or 1.0
@@ -26,7 +29,7 @@ def frame_vector(frame):
         slot = {"Left": 0, "Right": 1}.get(hand.get("handedness"))
         if slot is None:
             continue
-        norm = normalize_hand(hand["landmarks"])
+        norm = normalize_hand(hand["landmarks"], frame.get("aspect") or 1.0)
         if norm is None:
             continue
         base = slot * NUM_LANDMARKS * 3

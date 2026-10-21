@@ -17,6 +17,8 @@ test('JS and Python features match', () => {
   // Add a left hand and a missing frame so every branch is compared.
   sample.frames[3].hands.push({ ...sample.frames[3].hands[0], handedness: 'Left' });
   sample.frames[5].hands = [];
+  // Portrait and landscape frames, plus one frame without the field (old recordings).
+  sample.frames.forEach((f, i) => { if (i % 3 === 0) f.aspect = 0.5625; else if (i % 3 === 1) f.aspect = 1.333; });
   fs.writeFileSync(data, JSON.stringify(sample));
   const pyOut = JSON.parse(py('import json,sys; sys.path.insert(0,"training"); from features import sequence_features; print(json.dumps(sequence_features(json.load(open(sys.argv[1]))["frames"])))', data));
   const jsOut = sequenceFeatures(sample.frames);
@@ -45,4 +47,30 @@ test('trained model runs in JS and recognizes held-out synthetic data', async ()
     assert.ok(res.confidence > 0 && res.confidence <= 1);
   }
   assert.ok(correct / samples.length > 0.9, `js accuracy ${correct}/${samples.length}`);
+});
+
+test('bundled TSL model gives the same probabilities in JS and Python', async (t) => {
+  const modelPath = path.join(root, 'models/tsl-model.json');
+  if (!fs.existsSync(modelPath)) return t.skip('no bundled model');
+  const json = JSON.parse(fs.readFileSync(modelPath, 'utf8'));
+  assert.equal(json.labels.length, json.W2.length);
+  assert.ok(json.labels.every((l) => typeof json.display[l] === 'string'));
+  const data = path.join(tmp, 'bundled.json');
+  execFileSync('python3', ['tests/make_synthetic.py', data, '3'], { cwd: root });
+  const frames = JSON.parse(fs.readFileSync(data, 'utf8')).samples[7].frames.slice(0, json.window);
+  frames.forEach((f) => { f.aspect = 1.333; });
+  fs.writeFileSync(data, JSON.stringify(frames));
+  const code = [
+    'import json,sys; sys.path.insert(0,"training")',
+    'import numpy as np; from features import sequence_features; from train import predict',
+    'm=json.load(open(sys.argv[1])); f=json.load(open(sys.argv[2]))',
+    'x=(np.array(sequence_features(f))-np.array(m["mean"]))/np.array(m["std"])',
+    'p=predict([np.array(m[k]) for k in ("W1","b1","W2","b2")], x[None])[0]',
+    'print(json.dumps({"label": m["labels"][int(p.argmax())], "p": float(p.max())}))'
+  ].join('\n');
+  const pyOut = JSON.parse(py(code, modelPath, data));
+  const res = await new MlpModel(json).predict(frames);
+  assert.equal(res.label, pyOut.label);
+  assert.ok(Math.abs(res.confidence - pyOut.p) < 1e-9);
+  assert.equal(res.text, json.display[res.label]);
 });

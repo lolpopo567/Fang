@@ -133,7 +133,7 @@ export function initSign() {
       resultLabel.classList.remove('uncertain');
       return;
     }
-    resultLabel.textContent = p.label;
+    resultLabel.textContent = p.text ?? p.label;
     const pct = Math.round((p.confidence ?? 0) * 100);
     resultMeta.textContent = `${t('sign.confidence')} ${pct}%` + (isUncertain(p) ? ` · ${t('sign.uncertain')}` : '');
     resultLabel.classList.toggle('uncertain', isUncertain(p));
@@ -174,7 +174,7 @@ export function initSign() {
       const t0 = performance.now();
       const result = lm.detectForVideo(video, now);
       const latency = performance.now() - t0;
-      const frame = toHandFrame(result, now);
+      const frame = toHandFrame(result, now, video.videoWidth / video.videoHeight || 1);
       draw(frame, connections);
       window_.push(frame);
       recording?.frames.push(frame);
@@ -290,6 +290,7 @@ export function initSign() {
         recordedAt: new Date().toISOString(),
         frames: r.frames.map((f) => ({
           t: Math.round(f.t - t0),
+          aspect: round4(f.aspect),
           // 4 decimals keeps sub-pixel precision and makes samples ~3x smaller in storage.
           hands: f.hands.map((h) => ({ ...h, score: round4(h.score), landmarks: h.landmarks.map((p) => p.map(round4)) }))
         }))

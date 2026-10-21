@@ -1,2 +1,4 @@
 node_modules/
 tests/out-*.png
+__pycache__/
+data/
