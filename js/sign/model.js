@@ -50,13 +50,15 @@ export class MlpModel {
     return new MlpModel(await res.json());
   }
 
-  /** Returns { label, text, confidence, alternatives } with probabilities from softmax; text is the Thai word to show. */
+  /** Returns { label, text, confidence, alternatives } with probabilities from softmax; text is the word to show. */
   async predict(frames) {
     // The model never saw empty windows, so without hands in view it would still name a sign.
-    const withHands = frames.filter((f) => f.hands.length).length;
-    if (withHands < MIN_HAND_FRAMES * frames.length) {
+    const withHands = frames.filter((f) => f.hands.length);
+    if (withHands.length < MIN_HAND_FRAMES * frames.length) {
       return { label: NO_HANDS, text: NO_HANDS, confidence: 1, alternatives: [] };
     }
+    // Models trained on frames where the tracker often missed the hands (PopSign) skip hand-less frames.
+    if (this.skipEmptyFrames) frames = withHands;
     const x = sequenceFeatures(frames).map((v, i) => (v - this.mean[i]) / this.std[i]);
     const h = this.b1.map((b, k) => Math.max(0, b + dot(this.W1[k], x)));
     const logits = this.b2.map((b, c) => b + dot(this.W2[c], h));

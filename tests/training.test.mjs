@@ -27,6 +27,30 @@ test('JS and Python features match', () => {
   jsOut.forEach((v, i) => assert.ok(Math.abs(v - pyOut[i]) < 1e-9, `feature ${i}: ${v} vs ${pyOut[i]}`));
 });
 
+test('numpy clip features (dataset adapters) match features.py', () => {
+  const code = [
+    'import sys; sys.path.insert(0,"training")',
+    'import numpy as np; from features import sequence_features; from npfeatures import app_frame_vectors, window_features',
+    'rng=np.random.default_rng(1); h=rng.random((9,2,21,3)).astype(np.float32); h[2,0]=np.nan; h[5]=np.nan; h[7,1]=np.nan',
+    'frames=[{"aspect":0.75,"hands":[{"handedness":n,"landmarks":f[s].astype(float).tolist()} for s,n in ((0,"Left"),(1,"Right")) if not np.isnan(f[s]).any()]} for f in h]',
+    'print(float(np.abs(window_features(app_frame_vectors(h,0.75))-np.array(sequence_features(frames))).max()))'
+  ].join('\n');
+  assert.ok(Number(py(code)) < 1e-6);
+});
+
+test('skipEmptyFrames models ignore frames without hands', async () => {
+  const hand = (k) => ({ handedness: 'Left', landmarks: Array.from({ length: 21 }, (_, i) => [0.3 + i * 0.01 + k * 0.02, 0.5 + (i % 4) * 0.02, 0]) });
+  const frames = Array.from({ length: 10 }, (_, k) => ({ aspect: 1, hands: k % 2 ? [] : [hand(k)] }));
+  const d = 384;
+  const json = { format: 'fang-mlp-v1', labels: ['a', 'b'], window: 10, mean: new Array(d).fill(0), std: new Array(d).fill(1),
+    W1: [Array.from({ length: d }, (_, i) => (i % 7) / 7)], b1: [0], W2: [[1], [-1]], b2: [0, 0] };
+  const full = await new MlpModel(json).predict(frames);
+  const skip = await new MlpModel({ ...json, skipEmptyFrames: true }).predict(frames);
+  const only = await new MlpModel(json).predict(frames.filter((f) => f.hands.length));
+  assert.notEqual(full.confidence, skip.confidence);
+  assert.equal(skip.confidence, only.confidence);
+});
+
 test('trained model runs in JS and recognizes held-out synthetic data', async () => {
   const trainData = path.join(tmp, 'train.json');
   const testData = path.join(tmp, 'test.json');
@@ -49,8 +73,8 @@ test('trained model runs in JS and recognizes held-out synthetic data', async ()
   assert.ok(correct / samples.length > 0.9, `js accuracy ${correct}/${samples.length}`);
 });
 
-test('bundled TSL model gives the same probabilities in JS and Python', async (t) => {
-  const modelPath = path.join(root, 'models/tsl-model.json');
+for (const name of ['tsl-model.json', 'asl-model.json']) test(`bundled ${name} gives the same probabilities in JS and Python`, async (t) => {
+  const modelPath = path.join(root, 'models', name);
   if (!fs.existsSync(modelPath)) return t.skip('no bundled model');
   const json = JSON.parse(fs.readFileSync(modelPath, 'utf8'));
   assert.equal(json.labels.length, json.W2.length);
@@ -64,6 +88,7 @@ test('bundled TSL model gives the same probabilities in JS and Python', async (t
     'import json,sys; sys.path.insert(0,"training")',
     'import numpy as np; from features import sequence_features; from train import predict',
     'm=json.load(open(sys.argv[1])); f=json.load(open(sys.argv[2]))',
+    'f=[x for x in f if x["hands"]] if m.get("skipEmptyFrames") else f',
     'x=(np.array(sequence_features(f))-np.array(m["mean"]))/np.array(m["std"])',
     'p=predict([np.array(m[k]) for k in ("W1","b1","W2","b2")], x[None])[0]',
     'print(json.dumps({"label": m["labels"][int(p.argmax())], "p": float(p.max())}))'
