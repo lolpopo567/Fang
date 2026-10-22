@@ -50,6 +50,15 @@ try {
   }, null, { timeout: 60000 });
   console.log('sign result:', await page.textContent('#result-label'), await page.textContent('#result-meta'));
 
+  // Switching to ASL loads models/asl-model.json the same way.
+  await page.selectOption('#sign-lang', 'ase');
+  await page.waitForFunction(() => {
+    const meta = document.getElementById('result-meta').textContent;
+    return meta && !meta.includes('ยังไม่มีโมเดล');
+  }, null, { timeout: 60000 });
+  console.log('ASL result:', await page.textContent('#result-label'), await page.textContent('#result-meta'));
+  await page.selectOption('#sign-lang', 'tsl');
+
   if (video) {
     await page.click('.recorder summary');
     await page.fill('#rec-label', 'ทดสอบ');

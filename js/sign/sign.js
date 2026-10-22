@@ -6,7 +6,11 @@ import { MlpModel } from './model.js';
 
 const WASM_PATH = new URL('../../vendor/mediapipe/wasm', import.meta.url).href;
 const MODEL_PATH = new URL('../../models/hand_landmarker.task', import.meta.url).href;
-const SIGN_MODEL_PATH = new URL('../../models/tsl-model.json', import.meta.url).href;
+// One on-device model per sign language; the picker in the sign tab chooses which one runs.
+const SIGN_MODELS = {
+  tsl: new URL('../../models/tsl-model.json', import.meta.url).href,
+  ase: new URL('../../models/asl-model.json', import.meta.url).href
+};
 // Training data marks "no sign" (resting, transitions) with these labels; they are never shown as words.
 const NO_SIGN_LABELS = new Set(['null_act', '_none']);
 const PREDICT_EVERY_MS = 500;
@@ -66,14 +70,28 @@ export function initSign() {
   const hub = new RecognizerHub(offline, online);
   const window_ = new FrameWindow(30);
 
-  // A trained model is optional: without models/tsl-model.json the app reports "no model".
-  MlpModel.load(SIGN_MODEL_PATH)
-    .then((model) => {
-      if (!model) return;
-      offline.model = model;
-      window_.size = model.window;
-    })
-    .catch(() => {});
+  // A trained model is optional: without one the app reports "no model".
+  const signLangSel = document.getElementById('sign-lang');
+  let modelRequest = 0;
+  function loadSignModel(lang) {
+    const req = ++modelRequest;
+    offline.model = null;
+    window_.clear();
+    showPrediction(null);
+    MlpModel.load(SIGN_MODELS[lang])
+      .then((model) => {
+        if (!model || req !== modelRequest) return;
+        offline.model = model;
+        window_.size = model.window;
+      })
+      .catch(() => {});
+  }
+  signLangSel.value = load('fang.signLang', 'tsl');
+  if (!SIGN_MODELS[signLangSel.value]) signLangSel.value = 'tsl';
+  signLangSel.addEventListener('change', () => {
+    save('fang.signLang', signLangSel.value);
+    loadSignModel(signLangSel.value);
+  });
 
   let stream = null;
   let facing = 'user';
@@ -320,5 +338,6 @@ export function initSign() {
 
   setToggle();
   setPipeline('sign.stopped');
+  loadSignModel(signLangSel.value);
   if (samples.length) showCount();
 }
