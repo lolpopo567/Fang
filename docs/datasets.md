@@ -115,44 +115,52 @@ is a different language; it would need its own data.)
 ### Training on PopSign
 
 ```bash
-pip install mediapipe huggingface_hub pyarrow pillow numpy
-# Runs the app's own hand tracker (models/hand_landmarker.task) over every frame; ~30 min on 4 CPUs, streams the parquet files
+pip install mediapipe huggingface_hub pyarrow pillow numpy torch
+# Runs the app's own hand tracker (models/hand_landmarker.task) over every frame and streams the parquet files:
+# ~35 min for non-game, ~2 h 20 min for game on 4 CPUs
 python training/popsign.py prepare --subset non-game --out data/popsign.npz
-python training/train_popsign.py data/popsign.npz --test-split validation   # score on 8 held-out signers
-python training/train_popsign.py data/popsign.npz --final                   # the shipped model, scored on the test split
+python training/popsign.py prepare --subset game --out data/popsign-game.npz
+# score on the 8 validation signers (for comparing settings)
+python training/train_popsign.py data/popsign.npz data/popsign-game.npz --repeat-first 4
+# the shipped model: train + validation signers, scored on the 8 test signers (~30 min, needs ~10 GB RAM)
+python training/train_popsign.py data/popsign.npz data/popsign-game.npz --repeat-first 4 --final
 ```
 
-Results (2026-10-21), non-game subset. Every number is for signers the model never trained on, and counts only clips
-where the tracker saw a hand in at least 2 frames (78% of test clips, 73% of validation clips). In the app the others
-would show "no sign".
+Results (2026-10-22). Every number is for signers the model never trained on, and counts only clips where the
+tracker saw a hand in at least 2 frames (about 75% of clips). In the app the others would show "no sign".
+"Non-game" clips are the careful ones (one sign per recording); "game" clips were recorded while playing a game.
 
-| Trained on | Scored on | Signs | Clips scored | Top-1 | Top-3 |
+| Model | Trained on | Scored on | Signs | Top-1 | Top-3 |
 |---|---|---|---|---|---|
-| train split (31 signers) | validation split (8 signers) | 244 | 6,218 | 32% | 48% |
-| train split (31 signers) | test split (8 signers) | 244 | 2,412 | 43% | 60% |
-| train + validation (39 signers), **shipped** | test split (8 signers) | 246 | 2,412 | **45%** | **64%** |
+| v1 (2026-10-21) | non-game, train + validation | non-game test clips (2,412) | 246 | 45% | 64% |
+| **v2, shipped** | non-game + game, train + validation | non-game test clips (2,412) | 250 | **57%** | **76%** |
+| **v2, shipped** | non-game + game, train + validation | all test clips (27,281) | 250 | **62%** | **80%** |
+| v1 settings | non-game, train | non-game validation (6,218) | 244 | 32% | 48% |
+| v2 settings | non-game + game, train | non-game validation (6,220) | 250 | 40% | 59% |
 
-Random guessing would be under 0.5%. The Hugging Face copy's test split covers only 115 of the signs, so the test
-numbers say nothing about the other 131; the validation row (208 signs) is the fairer estimate for the full vocabulary.
-Signs that look alike from the hands alone are the most confused (nap/sleepy, dog/puppy, cheek/think, ear/hear),
-because the app only tracks hands, not the face or body.
+Random guessing would be under 0.5%. The Hugging Face copy's non-game test split covers only 115 of the signs; the
+validation rows cover 208, so they are the fairer estimate for the whole vocabulary. Signs that look alike from the
+hands alone are the most confused (nap/sleepy, dog/puppy, cheek/think, ear/hear), because the app only tracks hands.
 
-What was tried and how it is set up:
+What changed in v2, measured on the validation signers (non-game clips):
 
-- **Mirroring:** training on mirrored copies too adds about 3 points (29% → 32% on validation) and makes the model work
-  the same for left- and right-handed signers. It also removes a risk: it isn't documented whether PopSign's selfie
-  videos are mirrored, and with mirroring the score is the same either way (45% vs 46% on mirrored test clips).
-- **512 hidden units** instead of 256: no gain (32.1% vs 31.8%), so the smaller model ships (1.5 MB).
-- **Frame rate:** the clips are about 5 fps and about 1.2 s long, so a whole clip is one training example (plus two
-  shorter random spans of it). The app collects 45 frames (about 1.5 s at 30 fps). The features are averages, spreads
-  and the first-half/second-half change of hand shape, so they barely depend on frame rate, but this has not been
-  measured on a phone.
-- **Missed hands:** frames where the tracker found no hand are dropped before the features are computed, in training
-  and in the app (`skipEmptyFrames` in the model file). The Thai model is unchanged.
+- **Where the hands are** (`handPosition` in the model file): each frame also gets the wrist's place in the frame and
+  the hand's size, so signs made at the chin, chest or side can be told apart: +4 points (36% → 40%).
+- **Quarter-by-quarter features** (`features: 2`, shared with the Thai model) and a **two-layer network**
+  (512 + 256 units, dropout), trained with PyTorch.
+- **Fresh augmentation every batch:** mirrored (left-handed) copies, small rotations, zoom and shifts of the whole
+  frame, landmark jitter, shorter spans, dropped frames and dropped hands. Together with the network: +4 points.
+- **The game subset** (174k more clips): a big gain on game clips (57% on validation), but on the careful non-game
+  clips it only helps when those are weighted 4x (`--repeat-first 4`), and then it roughly matches non-game alone. The
+  shipped model uses both, since it does better on the mixed test set and has seen more ways of signing.
+- **Frame rate:** the model has `fps: 5` and `window: 8`, so the app resamples its last 1.6 s of camera frames to 5 fps,
+  the rate of the training clips, whatever rate the phone tracks at.
+- Tried, no gain: 1024 + 512 units (39% vs 40%), 80 instead of 40 epochs, upscaling or padding the 256x256 frames
+  before tracking (hands found in 59% vs 58% of frames).
 - No "no sign" class: PopSign has none. With hands in view but not signing, the app will still name a sign, usually
   with low confidence ("may be wrong").
-- **Next:** the "game" subset (4x more clips, ~2 h to process here) and the original full-rate videos should both
-  raise accuracy.
+- **Next:** the original full-rate videos (the tracker would see hands in far more frames), body and face points so
+  the model knows where the hand is relative to the face, and testing on real phones.
 - **License:** PopSign ASL v1.0 is CC BY 4.0. Credit: Thad Starner et al., "PopSign ASL v1.0: An Isolated American Sign
   Language Dataset Collected via Smartphones", NeurIPS 2023 Datasets and Benchmarks. The model file carries this in its
   `license` field.
