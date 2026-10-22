@@ -2,9 +2,24 @@
 export const STRINGS = {
   th: {
     'ui.language': 'ภาษา',
+    'nav.home': 'หน้าแรก',
+    'nav.settings': 'ตั้งค่า',
     'nav.captions': 'คำบรรยายสด',
     'nav.speak': 'พิมพ์ให้พูด',
     'nav.sign': 'ภาษามือ',
+    'home.title': 'วันนี้อยากใช้อะไร',
+    'home.captionsDesc': 'เปลี่ยนเสียงพูดรอบตัวเป็นตัวหนังสือ',
+    'home.speakDesc': 'พิมพ์แล้วให้เครื่องพูดแทน หรือแสดงตัวใหญ่',
+    'home.signDesc': 'กล้องทายท่าภาษามือทีละคำ (ต้นแบบ)',
+    'home.settingsDesc': 'ภาษา ธีม ขนาดตัวอักษร ความเร็วเสียง',
+    'settings.display': 'การแสดงผล',
+    'settings.theme': 'ธีม',
+    'settings.themeAuto': 'ตามเครื่อง',
+    'settings.themeLight': 'สว่าง',
+    'settings.themeDark': 'มืด',
+    'settings.preview': 'ตัวอย่างคำบรรยาย',
+    'settings.speechRate': 'ความเร็วเสียงพูด',
+    'settings.testVoice': '🔊 ลองฟังเสียง',
     'captions.placeholder': 'กด "เริ่มฟัง" แล้วคำพูดรอบตัวจะขึ้นเป็นข้อความที่นี่',
     'captions.start': 'เริ่มฟัง',
     'captions.stop': 'หยุดฟัง',
@@ -74,9 +89,24 @@ export const STRINGS = {
   },
   en: {
     'ui.language': 'Language',
+    'nav.home': 'Home',
+    'nav.settings': 'Settings',
     'nav.captions': 'Live captions',
     'nav.speak': 'Type to speak',
     'nav.sign': 'Sign language',
+    'home.title': 'What do you need?',
+    'home.captionsDesc': 'Turn speech around you into text',
+    'home.speakDesc': 'Type and let the phone speak, or show it large',
+    'home.signDesc': 'Camera guesses single signs (prototype)',
+    'home.settingsDesc': 'Language, theme, text size, voice speed',
+    'settings.display': 'Display',
+    'settings.theme': 'Theme',
+    'settings.themeAuto': 'Match device',
+    'settings.themeLight': 'Light',
+    'settings.themeDark': 'Dark',
+    'settings.preview': 'Caption preview',
+    'settings.speechRate': 'Speech speed',
+    'settings.testVoice': '🔊 Test voice',
     'captions.placeholder': 'Press "Start listening" and speech around you will appear here as text.',
     'captions.start': 'Start listening',
     'captions.stop': 'Stop listening',
@@ -153,6 +183,9 @@ export function setLang(lang) {
   document.documentElement.lang = current;
   for (const el of document.querySelectorAll('[data-i18n]')) {
     el.textContent = t(el.dataset.i18n);
+  }
+  for (const el of document.querySelectorAll('[data-i18n-label]')) {
+    el.setAttribute('aria-label', t(el.dataset.i18nLabel));
   }
 }
 

@@ -10,20 +10,41 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="css/app.css">
+  <script>
+    // Apply the saved theme before first paint so the page does not flash.
+    try { const t = JSON.parse(localStorage.getItem('fang.theme')); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+  </script>
 </head>
 <body>
   <header class="topbar">
-    <h1 class="brand"><span aria-hidden="true">👂</span> Fang <span class="brand-th">ฟัง</span></h1>
-    <label class="lang-switch">
-      <span class="sr-only" data-i18n="ui.language">ภาษา</span>
-      <select id="ui-lang">
-        <option value="th">ไทย</option>
-        <option value="en">English</option>
-      </select>
-    </label>
+    <h1 class="brand"><a href="#home" class="brand-link"><span aria-hidden="true">👂</span> Fang <span class="brand-th">ฟัง</span></a></h1>
+    <a href="#settings" id="open-settings" class="icon-btn" data-i18n-label="nav.settings" aria-label="ตั้งค่า"><span aria-hidden="true">⚙️</span></a>
   </header>
 
   <main>
+    <!-- Home -->
+    <section id="tab-home" class="tab" role="tabpanel" aria-labelledby="nav-home">
+      <h2 class="home-title" data-i18n="home.title"></h2>
+      <div class="mode-cards">
+        <a class="mode-card" href="#captions">
+          <span class="mode-icon" aria-hidden="true">💬</span>
+          <span class="mode-text"><strong data-i18n="nav.captions"></strong><span data-i18n="home.captionsDesc"></span></span>
+        </a>
+        <a class="mode-card" href="#speak">
+          <span class="mode-icon" aria-hidden="true">⌨️</span>
+          <span class="mode-text"><strong data-i18n="nav.speak"></strong><span data-i18n="home.speakDesc"></span></span>
+        </a>
+        <a class="mode-card" href="#sign">
+          <span class="mode-icon" aria-hidden="true">🤟</span>
+          <span class="mode-text"><strong data-i18n="nav.sign"></strong><span data-i18n="home.signDesc"></span></span>
+        </a>
+      </div>
+      <a class="mode-card settings-card" href="#settings">
+        <span class="mode-icon" aria-hidden="true">⚙️</span>
+        <span class="mode-text"><strong data-i18n="nav.settings"></strong><span data-i18n="home.settingsDesc"></span></span>
+      </a>
+    </section>
+
     <!-- Live captions -->
     <section id="tab-captions" class="tab" role="tabpanel" aria-labelledby="nav-captions">
       <div class="notice" id="captions-unsupported" hidden data-i18n="captions.unsupported"></div>
@@ -32,13 +53,6 @@
       </div>
       <div class="controls">
         <button id="caption-toggle" class="btn primary big" data-i18n="captions.start"></button>
-        <label class="field">
-          <span data-i18n="captions.speechLang"></span>
-          <select id="caption-lang">
-            <option value="th-TH">ไทย (th-TH)</option>
-            <option value="en-US">English (en-US)</option>
-          </select>
-        </label>
         <label class="field">
           <span data-i18n="captions.textSize"></span>
           <input id="caption-size" type="range" min="20" max="72" value="34">
@@ -87,20 +101,6 @@
             <option value="ase" data-i18n="sign.langAsl"></option>
           </select>
         </label>
-        <label class="field">
-          <span data-i18n="sign.mode"></span>
-          <select id="sign-mode">
-            <option value="offline" data-i18n="sign.modeOffline"></option>
-            <option value="online" data-i18n="sign.modeOnline"></option>
-            <option value="hybrid" data-i18n="sign.modeHybrid"></option>
-          </select>
-        </label>
-      </div>
-      <div class="field block" id="sign-endpoint-row" hidden>
-        <label>
-          <span data-i18n="sign.endpoint"></span>
-          <input id="sign-endpoint" type="url" placeholder="https://example.org/api/recognize">
-        </label>
       </div>
       <dl class="stats">
         <div><dt data-i18n="sign.statPipeline"></dt><dd id="stat-pipeline">—</dd></div>
@@ -126,10 +126,85 @@
         <p class="status" id="rec-status" role="status"></p>
       </details>
     </section>
+
+    <!-- Settings -->
+    <section id="tab-settings" class="tab" role="tabpanel" aria-labelledby="open-settings" hidden>
+      <h2 class="home-title" data-i18n="nav.settings"></h2>
+
+      <fieldset class="settings-group">
+        <legend data-i18n="settings.display"></legend>
+        <label class="field">
+          <span data-i18n="ui.language"></span>
+          <select id="ui-lang">
+            <option value="th">ไทย</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label class="field">
+          <span data-i18n="settings.theme"></span>
+          <select id="theme">
+            <option value="auto" data-i18n="settings.themeAuto"></option>
+            <option value="light" data-i18n="settings.themeLight"></option>
+            <option value="dark" data-i18n="settings.themeDark"></option>
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend><span aria-hidden="true">💬</span> <span data-i18n="nav.captions"></span></legend>
+        <label class="field">
+          <span data-i18n="captions.speechLang"></span>
+          <select id="caption-lang">
+            <option value="th-TH">ไทย (th-TH)</option>
+            <option value="en-US">English (en-US)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span data-i18n="captions.textSize"></span>
+          <input id="set-caption-size" type="range" min="20" max="72" value="34">
+        </label>
+        <p class="caption-preview" id="caption-preview" data-i18n="settings.preview"></p>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend><span aria-hidden="true">⌨️</span> <span data-i18n="nav.speak"></span></legend>
+        <label class="field">
+          <span><span data-i18n="settings.speechRate"></span> <output id="speech-rate-value"></output></span>
+          <input id="speech-rate" type="range" min="0.5" max="1.5" step="0.05" value="0.95">
+        </label>
+        <button id="speech-test" class="btn" data-i18n="settings.testVoice"></button>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend><span aria-hidden="true">🤟</span> <span data-i18n="nav.sign"></span></legend>
+        <label class="field">
+          <span data-i18n="sign.language"></span>
+          <select id="set-sign-lang">
+            <option value="tsl" data-i18n="sign.langTsl"></option>
+            <option value="ase" data-i18n="sign.langAsl"></option>
+          </select>
+        </label>
+        <label class="field">
+          <span data-i18n="sign.mode"></span>
+          <select id="sign-mode">
+            <option value="offline" data-i18n="sign.modeOffline"></option>
+            <option value="online" data-i18n="sign.modeOnline"></option>
+            <option value="hybrid" data-i18n="sign.modeHybrid"></option>
+          </select>
+        </label>
+        <div class="field block" id="sign-endpoint-row" hidden>
+          <label>
+            <span data-i18n="sign.endpoint"></span>
+            <input id="sign-endpoint" type="url" placeholder="https://example.org/api/recognize">
+          </label>
+        </div>
+      </fieldset>
+    </section>
   </main>
 
   <nav class="tabbar" role="tablist">
-    <button id="nav-captions" role="tab" data-tab="tab-captions" aria-selected="true"><span aria-hidden="true">💬</span><span data-i18n="nav.captions"></span></button>
+    <button id="nav-home" role="tab" data-tab="tab-home" aria-selected="true"><span aria-hidden="true">🏠</span><span data-i18n="nav.home"></span></button>
+    <button id="nav-captions" role="tab" data-tab="tab-captions" aria-selected="false"><span aria-hidden="true">💬</span><span data-i18n="nav.captions"></span></button>
     <button id="nav-speak" role="tab" data-tab="tab-speak" aria-selected="false"><span aria-hidden="true">⌨️</span><span data-i18n="nav.speak"></span></button>
     <button id="nav-sign" role="tab" data-tab="tab-sign" aria-selected="false"><span aria-hidden="true">🤟</span><span data-i18n="nav.sign"></span></button>
   </nav>
