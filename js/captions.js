@@ -29,7 +29,11 @@ export function initCaptions() {
     if (wanted) restart();
   });
 
-  const setLabel = () => { toggle.textContent = t(wanted ? 'captions.stop' : 'captions.start'); };
+  const setLabel = () => {
+    toggle.textContent = t(wanted ? 'captions.stop' : 'captions.start');
+    toggle.classList.toggle('is-live', wanted);
+    box.classList.toggle('is-live', wanted);
+  };
   document.addEventListener('langchange', setLabel);
 
   if (!Recognition) {
