@@ -40,9 +40,12 @@ export function normalizeHand(landmarks, aspect = 1) {
 /**
  * Fixed-length vector for one frame: [left hand 63 values, right hand 63 values, left present, right present].
  * Missing hands are zero-filled. Length 128.
+ * With handPosition, 6 more values say where each hand is (left then right): wrist x and y relative to the
+ * frame center, in frame-height units, and log(hand size / 0.1), which grows as the hand nears the camera.
+ * Length 134. Many signs differ mainly in where they are made (chin, chest, side), which the shape alone misses.
  */
-export function frameVector(frame) {
-  const out = new Array(2 * NUM_LANDMARKS * 3 + 2).fill(0);
+export function frameVector(frame, handPosition = false) {
+  const out = new Array(2 * NUM_LANDMARKS * 3 + 2 + (handPosition ? 6 : 0)).fill(0);
   for (const hand of frame.hands) {
     const slot = hand.handedness === 'Left' ? 0 : hand.handedness === 'Right' ? 1 : null;
     if (slot == null) continue;
@@ -55,6 +58,15 @@ export function frameVector(frame) {
       out[base + i * 3 + 2] = z;
     });
     out[2 * NUM_LANDMARKS * 3 + slot] = 1;
+    if (handPosition) {
+      const aspect = frame.aspect || 1;
+      const [[wx, wy, wz], m] = [hand.landmarks[WRIST], hand.landmarks[MIDDLE_MCP]];
+      const size = Math.hypot((m[0] - wx) * aspect, m[1] - wy, (m[2] - wz) * aspect) || 1;
+      const p = 2 * NUM_LANDMARKS * 3 + 2 + slot * 3;
+      out[p] = (wx - 0.5) * aspect;
+      out[p + 1] = wy - 0.5;
+      out[p + 2] = Math.log(size / 0.1);
+    }
   }
   return out;
 }
@@ -84,6 +96,6 @@ export class FrameWindow {
     this.frames = [];
   }
   toVectors() {
-    return this.frames.map(frameVector);
+    return this.frames.map((f) => frameVector(f));
   }
 }

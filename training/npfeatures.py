@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from features import FRAME_DIM, MIDDLE_MCP, NUM_LANDMARKS, SEGMENTS, WRIST  # noqa: E402
 
 
-def app_frame_vectors(hands, aspect):
-    """numpy version of features.frame_vector for a whole clip; returns (T, 128)."""
+def app_frame_vectors(hands, aspect, hand_position=False):
+    """numpy version of features.frame_vector for a whole clip; returns (T, 128), or (T, 134) with hand_position."""
     h = hands.astype(np.float64)
     h[..., 0] *= aspect
     h[..., 2] *= aspect
@@ -23,9 +23,12 @@ def app_frame_vectors(hands, aspect):
     scale = np.linalg.norm(rel[:, :, MIDDLE_MCP], axis=-1)
     scale[~(scale > 0)] = 1.0
     norm = np.where(present[:, :, None, None], rel / scale[:, :, None, None], 0.0)
-    out = np.zeros((len(h), FRAME_DIM))
+    out = np.zeros((len(h), FRAME_DIM + (6 if hand_position else 0)))
     out[:, : 2 * NUM_LANDMARKS * 3] = norm.reshape(len(h), -1)
-    out[:, 2 * NUM_LANDMARKS * 3 :] = present
+    out[:, 2 * NUM_LANDMARKS * 3 : FRAME_DIM] = present
+    if hand_position:
+        pos = np.stack([h[:, :, WRIST, 0] - 0.5 * aspect, h[:, :, WRIST, 1] - 0.5, np.log(scale / 0.1)], -1)
+        out[:, FRAME_DIM:] = np.where(present[:, :, None], pos, 0.0).reshape(len(h), 6)
     return out
 
 
@@ -34,7 +37,12 @@ def mirror(vecs):
     n = NUM_LANDMARKS * 3
     hands = vecs[:, : 2 * n].reshape(len(vecs), 2, NUM_LANDMARKS, 3)[:, ::-1].copy()
     hands[..., 0] *= -1
-    return np.concatenate([hands.reshape(len(vecs), -1), vecs[:, 2 * n :][:, ::-1]], axis=1)
+    parts = [hands.reshape(len(vecs), -1), vecs[:, 2 * n : FRAME_DIM][:, ::-1]]
+    if vecs.shape[1] > FRAME_DIM:  # hand_position values, [x, y, size] per slot
+        pos = vecs[:, FRAME_DIM:].reshape(len(vecs), 2, 3)[:, ::-1].copy()
+        pos[..., 0] *= -1
+        parts.append(pos.reshape(len(vecs), 6))
+    return np.concatenate(parts, axis=1)
 
 
 def main_hand_is_left(hands, aspect):

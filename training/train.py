@@ -133,7 +133,7 @@ def model_probs(m, frames):
         frames = picked
     if m.get("skipEmptyFrames"):
         frames = [f for f in frames if f["hands"]]
-    x = (np.array(sequence_features(frames, m.get("features", 1), bool(m.get("canonicalHand")))) - m["mean"]) / m["std"]
+    x = (np.array(sequence_features(frames, m.get("features", 1), bool(m.get("canonicalHand")), bool(m.get("handPosition")))) - m["mean"]) / m["std"]
     layers = m.get("layers") or [{"W": m["W1"], "b": m["b1"]}, {"W": m["W2"], "b": m["b2"]}]
     for i, layer in enumerate(layers):
         x = np.array(layer["W"]) @ x + layer["b"]

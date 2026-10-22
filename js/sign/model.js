@@ -33,6 +33,11 @@ export function mirrorVector(v) {
   const n = NUM_LANDMARKS * 3;
   const out = [...v.slice(n, 2 * n), ...v.slice(0, n), v[2 * n + 1], v[2 * n]];
   for (let i = 0; i < 2 * n; i += 3) out[i] = -out[i];
+  // handPosition values: [x, y, size] per slot, swapped too, with x flipped.
+  if (v.length > 2 * n + 2) {
+    const p = 2 * n + 2;
+    out.push(-v[p + 3], v[p + 4], v[p + 5], -v[p], v[p + 1], v[p + 2]);
+  }
   return out;
 }
 
@@ -69,12 +74,13 @@ export function mainHandIsLeft(frames) {
  * [mean of frame vectors, std of frame vectors, mean(second half) - mean(first half)], 3 x 128 values.
  * Mean/std capture the hand shape; the half difference captures the direction of movement.
  * Version 2 adds the mean of each quarter of the window (7 x 128 values), which keeps the order of movements.
+ * handPosition makes each frame vector 134 values (see frameVector).
  */
-export function sequenceFeatures(frames, { version = 1, canonicalHand = false } = {}) {
-  let vecs = frames.map(frameVector);
+export function sequenceFeatures(frames, { version = 1, canonicalHand = false, handPosition = false } = {}) {
+  let vecs = frames.map((f) => frameVector(f, handPosition));
   if (canonicalHand && mainHandIsLeft(frames)) vecs = vecs.map(mirrorVector);
   const n = vecs.length;
-  const d = vecs[0]?.length ?? 128;
+  const d = vecs[0]?.length ?? (handPosition ? 134 : 128);
   const mean = new Array(d).fill(0);
   const std = new Array(d).fill(0);
   const delta = new Array(d).fill(0);
@@ -127,7 +133,7 @@ export class MlpModel {
     }
     // Models trained on frames where the tracker often missed the hands (PopSign) skip hand-less frames.
     if (this.skipEmptyFrames) frames = withHands;
-    const opts = { version: this.features ?? 1, canonicalHand: Boolean(this.canonicalHand) };
+    const opts = { version: this.features ?? 1, canonicalHand: Boolean(this.canonicalHand), handPosition: Boolean(this.handPosition) };
     let h = sequenceFeatures(frames, opts).map((v, i) => (v - this.mean[i]) / this.std[i]);
     // `layers` [{W, b}, ...] with ReLU between them; older models have one hidden layer as W1/b1/W2/b2.
     const layers = this.layers ?? [{ W: this.W1, b: this.b1 }, { W: this.W2, b: this.b2 }];

@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { sequenceFeatures, MlpModel, mainHandIsLeft, resampleByTime } from '../js/sign/model.js';
+import { sequenceFeatures, MlpModel, mainHandIsLeft, mirrorVector, resampleByTime } from '../js/sign/model.js';
+import { frameVector } from '../js/sign/features.js';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fang-'));
@@ -20,9 +21,11 @@ test('JS and Python features match', () => {
   // Portrait and landscape frames, plus one frame without the field (old recordings).
   sample.frames.forEach((f, i) => { if (i % 3 === 0) f.aspect = 0.5625; else if (i % 3 === 1) f.aspect = 1.333; });
   fs.writeFileSync(data, JSON.stringify(sample));
-  for (const [version, canonical, dim] of [[1, false, 384], [2, false, 896], [2, true, 896]]) {
-    const pyOut = JSON.parse(py(`import json,sys; sys.path.insert(0,"training"); from features import sequence_features; print(json.dumps(sequence_features(json.load(open(sys.argv[1]))["frames"], ${version}, ${canonical ? 'True' : 'False'})))`, data));
-    const jsOut = sequenceFeatures(sample.frames, { version, canonicalHand: canonical });
+  const cases = [[1, false, false, 384], [2, false, false, 896], [2, true, false, 896], [2, false, true, 938], [2, true, true, 938]];
+  for (const [version, canonical, position, dim] of cases) {
+    const pyBool = (b) => (b ? 'True' : 'False');
+    const pyOut = JSON.parse(py(`import json,sys; sys.path.insert(0,"training"); from features import sequence_features; print(json.dumps(sequence_features(json.load(open(sys.argv[1]))["frames"], ${version}, ${pyBool(canonical)}, ${pyBool(position)})))`, data));
+    const jsOut = sequenceFeatures(sample.frames, { version, canonicalHand: canonical, handPosition: position });
     assert.equal(jsOut.length, dim);
     assert.equal(pyOut.length, dim);
     jsOut.forEach((v, i) => assert.ok(Math.abs(v - pyOut[i]) < 1e-9, `v${version} feature ${i}: ${v} vs ${pyOut[i]}`));
@@ -36,7 +39,10 @@ test('numpy clip features (dataset adapters) match features.py', () => {
     'rng=np.random.default_rng(1); h=rng.random((9,2,21,3)).astype(np.float32); h[2,0]=np.nan; h[5]=np.nan; h[7,1]=np.nan',
     'frames=[{"aspect":0.75,"hands":[{"handedness":n,"landmarks":f[s].astype(float).tolist()} for s,n in ((0,"Left"),(1,"Right")) if not np.isnan(f[s]).any()]} for f in h]',
     'print(float(np.abs(window_features(app_frame_vectors(h,0.75))-np.array(sequence_features(frames))).max()))',
-    'print(float(np.abs(window_features(app_frame_vectors(h,0.75),2)-np.array(sequence_features(frames,2))).max()))'
+    'print(float(np.abs(window_features(app_frame_vectors(h,0.75),2)-np.array(sequence_features(frames,2))).max()))',
+    'print(float(np.abs(window_features(app_frame_vectors(h,0.75,True),2)-np.array(sequence_features(frames,2,False,True))).max()))',
+    'from features import frame_vector, mirror_vector; from npfeatures import mirror',
+    'print(float(np.abs(mirror(app_frame_vectors(h,0.75,True))-np.array([mirror_vector(frame_vector(f,True)) for f in frames])).max()))'
   ].join('\n');
   for (const d of py(code).trim().split('\n')) assert.ok(Number(d) < 1e-6);
 });
@@ -55,6 +61,21 @@ test('canonicalHand mirrors windows led by the left-slot hand', () => {
   const rightLed = lefty.map((f) => ({ ...f, hands: [f.hands[1], { ...f.hands[0], handedness: 'Right' }].map((h, i) => ({ ...h, handedness: i ? 'Right' : 'Left' })) }));
   assert.ok(!mainHandIsLeft(rightLed));
   assert.deepEqual(sequenceFeatures(rightLed, { version: 2, canonicalHand: true }), sequenceFeatures(rightLed, { version: 2 }));
+});
+
+test('handPosition adds where each hand is, and mirroring flips it', () => {
+  const hand = (name, dx) => ({ handedness: name, landmarks: Array.from({ length: 21 }, (_, i) => [0.5 + dx + i * 0.01, 0.3 + (i % 5) * 0.02, 0]) });
+  const v = frameVector({ aspect: 0.5, hands: [hand('Right', 0.2)] }, true);
+  assert.equal(v.length, 134);
+  assert.deepEqual(v.slice(128, 131), [0, 0, 0]);
+  assert.ok(Math.abs(v[131] - 0.1) < 1e-12); // (0.7 - 0.5) * aspect 0.5
+  assert.ok(Math.abs(v[132] + 0.2) < 1e-12);
+  const m = mirrorVector(v);
+  assert.ok(Math.abs(m[128] + 0.1) < 1e-12);
+  assert.deepEqual(m.slice(129, 131), v.slice(132, 134));
+  assert.deepEqual(m.slice(131).map(Math.abs), [0, 0, 0]);
+  assert.deepEqual(mirrorVector(m), v);
+  assert.equal(frameVector({ hands: [hand('Left', 0)] }).length, 128);
 });
 
 test('resampleByTime covers a fixed time span at any frame rate', () => {
