@@ -1,6 +1,6 @@
 import { t } from '../i18n.js';
 import { load, save, download } from '../store.js';
-import { toHandFrame, FrameWindow } from './features.js';
+import { toHandFrame, FrameWindow, HandLabeler } from './features.js';
 import { OfflineRecognizer, OnlineRecognizer, RecognizerHub, isUncertain } from './recognizer.js';
 import { MlpModel } from './model.js';
 
@@ -69,6 +69,7 @@ export function initSign() {
   const offline = new OfflineRecognizer();
   const hub = new RecognizerHub(offline, online);
   const window_ = new FrameWindow(30);
+  const labeler = new HandLabeler();
 
   // A trained model is optional: without one the app reports "no model".
   const signLangSel = document.getElementById('sign-lang');
@@ -194,7 +195,7 @@ export function initSign() {
       const t0 = performance.now();
       const result = lm.detectForVideo(video, now);
       const latency = performance.now() - t0;
-      const frame = toHandFrame(result, now, video.videoWidth / video.videoHeight || 1);
+      const frame = labeler.push(toHandFrame(result, now, video.videoWidth / video.videoHeight || 1));
       draw(frame, connections);
       window_.push(frame);
       recording?.frames.push(frame);
@@ -252,6 +253,7 @@ export function initSign() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     empty.hidden = false;
     window_.clear();
+    labeler.reset();
     lastVideoTime = -1;
     for (const el of [stat.hands, stat.fps, stat.latency]) el.textContent = '—';
     setToggle();

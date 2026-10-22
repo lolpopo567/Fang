@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toHandFrame, normalizeHand, frameVector, FrameWindow } from '../js/sign/features.js';
+import { toHandFrame, normalizeHand, frameVector, FrameWindow, HandLabeler } from '../js/sign/features.js';
 import { OfflineRecognizer, OnlineRecognizer, RecognizerHub, isUncertain } from '../js/sign/recognizer.js';
 
 const hand = (dx = 0, s = 1) => Array.from({ length: 21 }, (_, i) => [0.5 + dx + (i === 9 ? 0.1 * s : i * 0.01 * s), 0.5, 0]);
@@ -39,6 +39,21 @@ test('FrameWindow keeps the last N frames', () => {
   assert.ok(w.full);
   assert.deepEqual(w.frames.map((f) => f.t), [2, 3, 4]);
   assert.equal(w.toVectors().length, 3);
+});
+
+test('HandLabeler keeps both hands when the tracker gives them the same label', () => {
+  const at = (handedness, dx, score = 0.9) => ({ handedness, score, landmarks: hand(dx) });
+  const lab = new HandLabeler();
+  // No history: the more confident hand keeps its label, the other gets the free one.
+  let f = lab.push({ t: 0, aspect: 1, hands: [at('Right', -0.2, 0.6), at('Right', 0.2, 0.9)] });
+  assert.deepEqual(f.hands.map((h) => h.handedness), ['Left', 'Right']);
+  assert.equal(frameVector(f).slice(126).join(), '1,1');
+  // With history each hand keeps the slot it was last seen nearest, whatever the scores say.
+  f = lab.push({ t: 1, aspect: 1, hands: [at('Left', 0.19, 0.95), at('Left', -0.19, 0.5)] });
+  assert.deepEqual(f.hands.map((h) => h.handedness), ['Right', 'Left']);
+  // Labels that already differ are left alone.
+  const ok = { t: 2, aspect: 1, hands: [at('Right', -0.2), at('Left', 0.2)] };
+  assert.equal(lab.push(ok), ok);
 });
 
 test('offline recognizer reports no_model until a model is plugged in', async () => {

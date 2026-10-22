@@ -89,6 +89,13 @@ Things to know:
 - Coordinates are corrected for the frame's aspect ratio (new `aspect` field on each HandFrame), so a portrait phone and
   a landscape webcam give the same hand shape. Old recordings without the field are read as aspect 1.
 - When fewer than 30% of the frames in a window contain a hand, the app shows "no sign" without asking the model.
+- **Touching hands (2026-10-22).** When the hands touch or cross, the tracker often labels both 'Left' or both
+  'Right' (6% of all frames on the 547 user_01 clips, about a quarter of the two-hand frames), and the app then kept
+  only one of them. `HandLabeler` gives each hand its own label by where each was last seen. On the 196 clips where the
+  hands touch: 79.1% -> 82.7% top-1 (all clips 82.8% -> 84.3%; this model trained on user_01's Holistic landmarks, so
+  these are higher than the held-out score above, compare only the change). Tried without gain: carrying a lost hand
+  forward for 150-500 ms (-1 to -6 points) and lower tracker thresholds (0.3 instead of 0.5: no more two-hand frames).
+  A hand fully hidden behind the other is still lost by the tracker itself.
 - **License:** TSL-51 is CC BY-NC-SA 4.0. The model is a derivative, so it is non-commercial and share-alike, and must
   credit Namonpas Viriyaroj, TSL-51 (2026). Replace or license this data before any commercial release.
 
