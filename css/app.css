@@ -63,6 +63,45 @@ body {
 }
 .brand { font-size: 1.25rem; margin: 0; }
 .brand-th { color: var(--accent); }
+.brand-link { color: inherit; text-decoration: none; }
+.icon-btn {
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px;
+  font-size: 1.5rem; text-decoration: none; border: 1px solid transparent;
+}
+.icon-btn.active { background: var(--bg); border-color: var(--border); }
+.icon-btn:focus-visible, .brand-link:focus-visible, .mode-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.home-title { font-size: 1.5rem; margin: 8px 0 16px; }
+.mode-cards { display: grid; gap: 12px; }
+.mode-card {
+  display: flex; align-items: center; gap: 16px; min-height: 96px; padding: 16px 18px;
+  background: var(--surface); color: var(--text); text-decoration: none;
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.mode-card:hover { border-color: var(--accent); }
+.mode-card:active { transform: scale(0.99); }
+.mode-icon {
+  flex: none; display: grid; place-items: center; width: 64px; height: 64px;
+  font-size: 2.2rem; border-radius: 16px; background: var(--bg);
+}
+.mode-text { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 0.95rem; }
+.mode-text strong { color: var(--text); font-size: 1.3rem; }
+.settings-card { margin-top: 20px; min-height: 72px; }
+.settings-card .mode-icon { width: 48px; height: 48px; font-size: 1.6rem; }
+.settings-card .mode-text strong { font-size: 1.1rem; }
+
+.settings-group {
+  display: grid; gap: 14px; margin: 0 0 16px; padding: 14px 16px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.settings-group legend { font-weight: 700; padding: 0 6px; }
+.settings-group .field input[type="range"] { width: 100%; }
+.settings-group .field select { width: 100%; }
+.settings-group .btn { justify-self: start; }
+.caption-preview {
+  margin: 0; padding: 10px 14px; border-radius: 10px; overflow-wrap: anywhere;
+  background: var(--caption-bg); color: var(--caption-text); line-height: 1.35; font-weight: 500;
+}
 
 main { max-width: 860px; margin: 0 auto; padding: 16px; }
 h2 { font-size: 1.1rem; margin: 24px 0 8px; }
@@ -135,7 +174,7 @@ textarea { width: 100%; padding: 12px; font-size: 1.3rem; }
 
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(4, 1fr);
   background: var(--surface); border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
 }

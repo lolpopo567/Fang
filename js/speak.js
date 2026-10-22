@@ -28,6 +28,8 @@ export function initSpeak() {
   const list = document.getElementById('phrase-list');
   const big = document.getElementById('bigtext');
   const bigContent = document.getElementById('bigtext-content');
+  const rate = document.getElementById('speech-rate');
+  const rateValue = document.getElementById('speech-rate-value');
 
   let custom = load('fang.phrases', []);
 
@@ -53,7 +55,7 @@ export function initSpeak() {
     const u = new SpeechSynthesisUtterance(phrase);
     u.voice = voice;
     u.lang = voice.lang;
-    u.rate = 0.95;
+    u.rate = Number(rate.value);
     speechSynthesis.speak(u);
     status.textContent = '';
   }
@@ -107,6 +109,17 @@ export function initSpeak() {
     status.textContent = t('speak.saved');
     render();
   });
+  const showRate = () => { rateValue.textContent = `${Number(rate.value).toFixed(2)}×`; };
+  rate.value = load('fang.speechRate', 0.95);
+  showRate();
+  rate.addEventListener('input', () => {
+    showRate();
+    save('fang.speechRate', Number(rate.value));
+  });
+  document.getElementById('speech-test').addEventListener('click', () => {
+    say(DEFAULT_PHRASES[getLang()][0]);
+  });
+
   document.getElementById('bigtext-close').addEventListener('click', () => { big.hidden = true; });
   big.addEventListener('keydown', (e) => { if (e.key === 'Escape') big.hidden = true; });
 
