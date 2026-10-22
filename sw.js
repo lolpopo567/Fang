@@ -1,6 +1,6 @@
 // Offline support: app shell is precached; the large MediaPipe files are cached the first time
 // the camera is used, so later visits work without a connection.
-const CACHE = 'fang-v8';
+const CACHE = 'fang-v9';
 const SHELL = [
   './',
   'index.html',

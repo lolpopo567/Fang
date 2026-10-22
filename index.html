@@ -34,6 +34,7 @@
         <p class="hero-kicker" data-i18n="home.greeting"></p>
         <h2 class="hero-title" data-i18n="home.title"></h2>
         <p class="hero-sub" data-i18n="home.subtitle"></p>
+        <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       </div>
       <div class="mode-cards">
         <a class="mode-card tone-blue" href="#captions">
@@ -60,8 +61,11 @@
     </section>
 
     <!-- Live captions -->
-    <section id="tab-captions" class="tab" role="tabpanel" aria-labelledby="nav-captions">
-      <h2 class="screen-title" data-i18n="nav.captions"></h2>
+    <section id="tab-captions" class="tab tone-blue" role="tabpanel" aria-labelledby="nav-captions">
+      <header class="screen-head tone-blue">
+        <span class="tile" aria-hidden="true"><span class="icon i-captions"></span></span>
+        <div><h2 class="screen-title" data-i18n="nav.captions"></h2><p class="screen-sub" data-i18n="home.captionsDesc"></p></div>
+      </header>
       <div class="notice warn" id="captions-unsupported" hidden><span class="icon i-alert" aria-hidden="true"></span><span data-i18n="captions.unsupported"></span></div>
       <div id="caption-box" class="caption-box" aria-live="polite" aria-atomic="false">
         <p class="placeholder" data-i18n="captions.placeholder"></p>
@@ -83,8 +87,11 @@
     </section>
 
     <!-- Type to speak -->
-    <section id="tab-speak" class="tab" role="tabpanel" aria-labelledby="nav-speak" hidden>
-      <h2 class="screen-title" data-i18n="nav.speak"></h2>
+    <section id="tab-speak" class="tab tone-orange" role="tabpanel" aria-labelledby="nav-speak" hidden>
+      <header class="screen-head tone-orange">
+        <span class="tile" aria-hidden="true"><span class="icon i-keyboard"></span></span>
+        <div><h2 class="screen-title" data-i18n="nav.speak"></h2><p class="screen-sub" data-i18n="home.speakDesc"></p></div>
+      </header>
       <div class="card compose">
         <label class="field block">
           <span data-i18n="speak.label"></span>
@@ -102,8 +109,11 @@
     </section>
 
     <!-- Sign camera -->
-    <section id="tab-sign" class="tab" role="tabpanel" aria-labelledby="nav-sign" hidden>
-      <h2 class="screen-title" data-i18n="nav.sign"></h2>
+    <section id="tab-sign" class="tab tone-violet" role="tabpanel" aria-labelledby="nav-sign" hidden>
+      <header class="screen-head tone-violet">
+        <span class="tile" aria-hidden="true"><span class="icon i-hand"></span></span>
+        <div><h2 class="screen-title" data-i18n="nav.sign"></h2><p class="screen-sub" data-i18n="home.signDesc"></p></div>
+      </header>
       <div class="notice warn"><span class="icon i-alert" aria-hidden="true"></span><span data-i18n="sign.prototype"></span></div>
       <div class="stage">
         <video id="sign-video" playsinline muted></video>
@@ -150,7 +160,10 @@
 
     <!-- Settings -->
     <section id="tab-settings" class="tab" role="tabpanel" aria-labelledby="open-settings" hidden>
-      <h2 class="screen-title" data-i18n="nav.settings"></h2>
+      <header class="screen-head tone-slate">
+        <span class="tile" aria-hidden="true"><span class="icon i-settings"></span></span>
+        <div><h2 class="screen-title" data-i18n="nav.settings"></h2><p class="screen-sub" data-i18n="home.settingsDesc"></p></div>
+      </header>
 
       <fieldset class="settings-group">
         <legend><span class="tile" aria-hidden="true"><span class="icon i-palette"></span></span><span data-i18n="settings.display"></span></legend>
@@ -224,10 +237,10 @@
   </main>
 
   <nav class="tabbar" role="tablist">
-    <button id="nav-home" role="tab" data-tab="tab-home" aria-selected="true"><span class="tab-icon" aria-hidden="true"><span class="icon i-home"></span></span><span data-i18n="nav.home"></span></button>
-    <button id="nav-captions" role="tab" data-tab="tab-captions" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-captions"></span></span><span data-i18n="nav.captions"></span></button>
-    <button id="nav-speak" role="tab" data-tab="tab-speak" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-keyboard"></span></span><span data-i18n="nav.speak"></span></button>
-    <button id="nav-sign" role="tab" data-tab="tab-sign" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-hand"></span></span><span data-i18n="nav.sign"></span></button>
+    <button id="nav-home" class="tone-accent" role="tab" data-tab="tab-home" aria-selected="true"><span class="tab-icon" aria-hidden="true"><span class="icon i-home"></span></span><span data-i18n="nav.home"></span></button>
+    <button id="nav-captions" class="tone-blue" role="tab" data-tab="tab-captions" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-captions"></span></span><span data-i18n="nav.captions"></span></button>
+    <button id="nav-speak" class="tone-orange" role="tab" data-tab="tab-speak" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-keyboard"></span></span><span data-i18n="nav.speak"></span></button>
+    <button id="nav-sign" class="tone-violet" role="tab" data-tab="tab-sign" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-hand"></span></span><span data-i18n="nav.sign"></span></button>
   </nav>
 
   <div id="bigtext" class="bigtext" hidden role="dialog" aria-modal="true">
