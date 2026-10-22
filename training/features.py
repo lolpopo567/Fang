@@ -9,6 +9,7 @@ NUM_LANDMARKS = 21
 WRIST = 0
 MIDDLE_MCP = 9
 FRAME_DIM = 2 * NUM_LANDMARKS * 3 + 2  # 128
+SEGMENTS = 4  # features version 2: mean of each quarter of the window
 
 
 def normalize_hand(landmarks, aspect=1.0):
@@ -41,12 +42,50 @@ def frame_vector(frame):
     return out
 
 
-def sequence_features(frames):
-    """[mean, std, mean(second half) - mean(first half)] over frame vectors; 384 values."""
+def mirror_vector(v):
+    """The same frame signed with the other hand leading: swap the two hand slots and flip x."""
+    n = NUM_LANDMARKS * 3
+    out = v[n : 2 * n] + v[:n] + [v[2 * n + 1], v[2 * n]]
+    for i in range(0, 2 * n, 3):
+        out[i] = -out[i]
+    return out
+
+
+def main_hand_is_left(frames):
+    """True when the 'Left' slot hand leads the window: it is the only hand seen, or its wrist moves more.
+    Models with canonicalHand mirror such windows, so left- and right-handed signers look the same."""
+    present = [0, 0]
+    moved = [0.0, 0.0]
+    prev = [None, None]
+    for f in frames:
+        aspect = f.get("aspect") or 1.0
+        wrist = [None, None]
+        for hand in f["hands"]:
+            slot = {"Left": 0, "Right": 1}.get(hand.get("handedness"))
+            if slot is not None and len(hand["landmarks"]) == NUM_LANDMARKS:
+                x, y, _ = hand["landmarks"][WRIST]
+                wrist[slot] = (x * aspect, y)
+        for s in (0, 1):
+            if wrist[s] is not None:
+                present[s] += 1
+                if prev[s] is not None:
+                    moved[s] += math.hypot(wrist[s][0] - prev[s][0], wrist[s][1] - prev[s][1])
+            prev[s] = wrist[s]
+    if present[0] != present[1] and min(present) == 0:
+        return present[0] > present[1]
+    return moved[0] > moved[1]
+
+
+def sequence_features(frames, version=1, canonical_hand=False):
+    """[mean, std, mean(second half) - mean(first half)] over frame vectors; 384 values.
+    Version 2 adds the mean of each of SEGMENTS equal parts of the window (896 values), which keeps
+    the order of movements; canonical_hand mirrors windows led by the 'Left' slot hand."""
     vecs = [frame_vector(f) for f in frames]
+    if canonical_hand and main_hand_is_left(frames):
+        vecs = [mirror_vector(v) for v in vecs]
     n = len(vecs)
     if n == 0:
-        return [0.0] * (3 * FRAME_DIM)
+        return [0.0] * ((3 + (SEGMENTS if version >= 2 else 0)) * FRAME_DIM)
     half = n // 2 or 1
     mean, std, delta = [], [], []
     for j in range(FRAME_DIM):
@@ -56,4 +95,10 @@ def sequence_features(frames):
         std.append(math.sqrt(sum((c - m) ** 2 for c in col) / n))
         a = sum(col[:half]) / half
         delta.append(sum(col[half:]) / (n - half) - a if n - half > 0 else 0.0)
-    return mean + std + delta
+    out = mean + std + delta
+    if version >= 2:
+        for j in range(SEGMENTS):
+            lo = j * n // SEGMENTS
+            seg = vecs[lo : max((j + 1) * n // SEGMENTS, lo + 1)]
+            out += [sum(v[k] for v in seg) / len(seg) for k in range(FRAME_DIM)]
+    return out

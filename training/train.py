@@ -120,6 +120,29 @@ def predict(params, x):
     return p / p.sum(1, keepdims=True)
 
 
+def model_probs(m, frames):
+    """Reference for MlpModel.predict in js/sign/model.js (minus the no-hands check): class probabilities."""
+    if m.get("fps"):
+        span = 1000 * m["window"] / m["fps"]
+        end, i, picked = frames[-1]["t"], 0, []
+        for k in range(m["window"]):
+            target = end - span + (k + 0.5) * span / m["window"]
+            while i < len(frames) - 1 and frames[i]["t"] < target:
+                i += 1
+            picked.append(frames[i])
+        frames = picked
+    if m.get("skipEmptyFrames"):
+        frames = [f for f in frames if f["hands"]]
+    x = (np.array(sequence_features(frames, m.get("features", 1), bool(m.get("canonicalHand")))) - m["mean"]) / m["std"]
+    layers = m.get("layers") or [{"W": m["W1"], "b": m["b1"]}, {"W": m["W2"], "b": m["b2"]}]
+    for i, layer in enumerate(layers):
+        x = np.array(layer["W"]) @ x + layer["b"]
+        if i < len(layers) - 1:
+            x = np.maximum(x, 0)
+    p = np.exp(x - x.max())
+    return p / p.sum()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("inputs", nargs="+")
