@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from features import FRAME_DIM, MIDDLE_MCP, NUM_LANDMARKS, WRIST  # noqa: E402
+from features import FRAME_DIM, MIDDLE_MCP, NUM_LANDMARKS, SEGMENTS, WRIST  # noqa: E402
 
 
 def app_frame_vectors(hands, aspect):
@@ -37,9 +37,24 @@ def mirror(vecs):
     return np.concatenate([hands.reshape(len(vecs), -1), vecs[:, 2 * n :][:, ::-1]], axis=1)
 
 
-def window_features(vecs):
-    """numpy version of features.sequence_features over one window of frame vectors; returns (384,)."""
+def main_hand_is_left(hands, aspect):
+    """numpy version of features.main_hand_is_left for one window of (T, 2, 21, 3) hands."""
+    w = hands[:, :, WRIST, :2].astype(np.float64) * [aspect, 1.0]
+    present = (~np.isnan(w).any(-1)).sum(0)
+    if present[0] != present[1] and present.min() == 0:
+        return bool(present[0] > present[1])
+    moved = np.nan_to_num(np.linalg.norm(np.diff(w, axis=0), axis=-1)).sum(0)
+    return bool(moved[0] > moved[1])
+
+
+def window_features(vecs, version=1):
+    """numpy version of features.sequence_features over one window of frame vectors; returns (384,) or (896,)."""
     n = len(vecs)
     half = n // 2 or 1
     delta = vecs[half:].mean(0) - vecs[:half].mean(0) if n - half > 0 else np.zeros(vecs.shape[1])
-    return np.concatenate([vecs.mean(0), vecs.std(0), delta])
+    out = [vecs.mean(0), vecs.std(0), delta]
+    if version >= 2:
+        for j in range(SEGMENTS):
+            lo = j * n // SEGMENTS
+            out.append(vecs[lo : max((j + 1) * n // SEGMENTS, lo + 1)].mean(0))
+    return np.concatenate(out)

@@ -83,6 +83,8 @@ export function initSign() {
         if (!model || req !== modelRequest) return;
         offline.model = model;
         window_.size = model.window;
+        // Models with an fps get a fixed time span (resampled in predict); older ones a fixed frame count.
+        window_.durationMs = model.fps ? (1000 * model.window) / model.fps : 0;
       })
       .catch(() => {});
   }

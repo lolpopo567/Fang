@@ -59,17 +59,25 @@ export function frameVector(frame) {
   return out;
 }
 
-/** Keeps the last `size` frames so recognizers get a time window, not a single pose. */
+/**
+ * Keeps the last `size` frames so recognizers get a time window, not a single pose.
+ * With durationMs set it keeps the last durationMs of frames instead (plus the one frame just before),
+ * whatever the camera's frame rate; models with an `fps` field resample that span to a fixed length.
+ */
 export class FrameWindow {
-  constructor(size = 30) {
+  constructor(size = 30, durationMs = 0) {
     this.size = size;
+    this.durationMs = durationMs;
     this.frames = [];
   }
   push(frame) {
     this.frames.push(frame);
-    if (this.frames.length > this.size) this.frames.shift();
+    if (this.durationMs) {
+      while (this.frames.length > 1 && this.frames[1].t <= frame.t - this.durationMs) this.frames.shift();
+    } else if (this.frames.length > this.size) this.frames.shift();
   }
   get full() {
+    if (this.durationMs) return this.frames.length > 1 && this.frames.at(-1).t - this.frames[0].t >= this.durationMs;
     return this.frames.length === this.size;
   }
   clear() {

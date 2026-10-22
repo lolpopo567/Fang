@@ -28,42 +28,64 @@ Checked 2026-10-21. Licenses can change, so re-check the source page before usin
 #### On TSL-51 (the bundled model)
 
 ```bash
-# landmark CSVs only (about 1.2 GB), not the videos
+# landmark CSVs only (about 1.2 GB), plus the researcher's 547 short videos for the app-tracker test
 B=https://huggingface.co/datasets/Namonpas/thai-sign-language-tsl51/resolve/main
 mkdir -p data/tsl51 && cd data/tsl51
 curl -L --create-dirs -o metadata/expert_metadata.csv $B/metadata/expert_metadata.csv
 curl -L --create-dirs -o metadata/user_sign_metadata.csv $B/metadata/user_sign_metadata.csv
 curl -LO $B/landmarks/expert_primary_02.zip && unzip -q expert_primary_02.zip -d e02
 curl -LO $B/landmarks/expert_primary_03.zip && unzip -q expert_primary_03.zip -d e03
-# plus the 547 files listed in user_sign_metadata.csv, from $B/landmarks/user_sign/<name>.csv
+# plus the files listed in user_sign_metadata.csv: $B/<landmark_path> and $B/<video_path>
 cd ../..
+pip install numpy pandas torch                          # torch: CPU build is enough
 python training/tsl51.py prepare data/tsl51 --out data/tsl51.npz
 python training/tsl51.py selftest data/tsl51.npz        # numpy features == features.py
-python training/train_tsl51.py data/tsl51.npz --window 45 --hidden 256 --test-signers ""   # the shipped model
-python training/train_tsl51.py data/tsl51.npz --window 45 --hidden 256 --test-signers user_01  # a score
+python training/tsl51.py track data/tsl51 --out data/tsl51-user-app.npz   # needs mediapipe + opencv, ~5 min
+python training/train_tsl51.py data/tsl51.npz --test-signers ""   # the shipped model, ~5 min on 4 CPUs
+python training/train_tsl51.py data/tsl51.npz --test-signers user_01 --app-test data/tsl51-user-app.npz  # a score
 ```
 
-Results (2026-10-21), 52 classes (51 signs + `null_act`), one 45-frame window centred on the movement of each clip:
+Results (2026-10-22, second model), 52 classes (51 signs + `null_act`), one prediction per clip, centred on the movement:
 
-| Held-out signer | Trained on | Clips | Top-1 | Top-3 |
-|---|---|---|---|---|
-| user_01 (researcher, 640x480 webcam) | both interpreters | 547 | 60% | 84% |
-| expert_02 (interpreter) | expert_01 + user_01 | 552 | 55% | 78% |
-| expert_01 (interpreter, 46 signs) | expert_02 + user_01 | 481 | 42% | 63% |
+| Held-out signer | Trained on | Clips | Top-1 | Top-3 | First model (top-1 / top-3) |
+|---|---|---|---|---|---|
+| user_01 (researcher, 640x480 webcam) | both interpreters | 547 | 69% | 90% | 60% / 84% |
+| user_01, landmarks from **the app's own tracker** | both interpreters | 547 | 62% | 85% | **7% / 13%** (hand mix-up, below) |
+| expert_02 (interpreter) | expert_01 + user_01 | 552 | 72% | 91% | 55% / 78% |
+| expert_01 (interpreter, 46 signs) | expert_02 + user_01 | 481 | 45% | 76% | 42% / 63% |
 
-The shipped `models/tsl-model.json` uses the same settings trained on all three signers; its `report` holds these numbers.
-Random guessing would be 2%. With only 3 signers, expect a new person to land in the same 40–60% range, lower with a
-different camera angle or lighting. What was tried: windows of 30/45/60 frames (45 best), 128 vs 256 hidden units (256
-slightly better), stronger weight decay (no gain), and training on mirrored clips for left-handed signers
-(`--mirror`, about 2 points lower on right-handed test signers, so off by default).
+The app-tracker row is the closest to real use: the researcher's videos run through `models/hand_landmarker.task`, then
+through the same steps as `MlpModel.predict` (`train.model_probs`). It stays at 60-63% top-1 whether the camera
+delivers 10, 15 or 30 frames a second, and is the same for mirrored (left-handed) signing. The shipped
+`models/tsl-model.json` uses these settings trained on all three signers; its `report` holds these numbers. Random
+guessing would be 2%. With only 3 signers, a new person should still expect roughly half to two thirds right, lower
+with a different camera angle or lighting.
+
+What changed from the first model, in order of effect:
+
+1. **Hand mix-up fixed.** The first adapter put the signer's right hand in the app's `Left` slot, based on MediaPipe's
+   docs. Running the app's tracker on 40 raw TSL-51 videos showed it names Holistic's left hand `Left` 97% of the time,
+   so in the app the signing hand arrived in the slot the model had learned for the other hand. Scores on the
+   dataset's own landmarks never showed this, because training and test were wrong the same way.
+2. **Same time span at any frame rate.** The data is 30 fps; phones track hands at maybe 8-20 fps, so the first
+   model's 45-frame window covered 2-5 seconds on a phone instead of 1.5. Models now carry `fps` (15) and `window`
+   (24): the app keeps the last 1.6 s of frames and resamples them to 24 by timestamp, and training simulates cameras
+   at random 8-30 fps.
+3. **Training on the dataset's 30 augmented copies** (rotation, scale, speed, crops) plus our own random rotation,
+   stretch, jitter and dropped hands: +14 points on the app-tracker test.
+4. **`features: 2`**: besides mean, spread and first-half/second-half change, the mean of each quarter of the window,
+   which keeps the order of movements (+5). Frames without hands are skipped (`skipEmptyFrames`, +4).
+5. **Two hidden layers** of 256 with dropout, trained with PyTorch and exported as `layers` (+3). 512,256 was no better.
+6. **`canonicalHand`**: when the `Left` slot hand leads a window, the window is mirrored, so left-handed signers get the
+   same accuracy (about 1 point cost for right-handed ones). Plain mirror augmentation instead cost 6 points.
+
+Tried without gain: a small temporal conv net on the 24 frames (same top-1, lower top-3), windows of 1.6-2 s at 10 or
+15 fps (all within a point), 20 epochs instead of 10.
 
 Things to know:
 
 - Only the 2 x 21 hand points are used, because the app runs the hand tracker only. Signs that differ mainly by where
   the hand is on the body (face vs chest) are the most confused.
-- Hands: Holistic names hands from the signer's side; the app's tracker labels them as if the camera image were mirrored.
-  The adapter maps the signer's right hand to the app's `Left` slot. This follows MediaPipe's documentation and has not
-  yet been checked on a phone; if predictions look mirrored on a real camera, swap the slots in `tsl51.frame_vectors`.
 - Coordinates are corrected for the frame's aspect ratio (new `aspect` field on each HandFrame), so a portrait phone and
   a landscape webcam give the same hand shape. Old recordings without the field are read as aspect 1.
 - When fewer than 30% of the frames in a window contain a hand, the app shows "no sign" without asking the model.

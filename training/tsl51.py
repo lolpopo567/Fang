@@ -9,9 +9,13 @@ with numpy (checked against features.py by `selftest`).
 
     python training/tsl51.py prepare DATA_DIR --out data/tsl51.npz
     python training/tsl51.py selftest data/tsl51.npz
+    python training/tsl51.py track DATA_DIR --out data/tsl51-user-app.npz   # optional, needs mediapipe + opencv
 
 DATA_DIR holds metadata/*.csv plus the unzipped landmark CSVs anywhere below it
 (landmarks/expert_primary_02.zip, landmarks/expert_primary_03.zip and landmarks/user_sign/).
+
+`track` runs the app's own hand tracker over the researcher's videos (videos/user_sign/, the only videos
+TSL-51 publishes), which gives a test set with the landmarks the app really sees, not Holistic's.
 """
 
 import argparse
@@ -26,7 +30,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 from features import NUM_LANDMARKS  # noqa: E402
-from npfeatures import app_frame_vectors, mirror, window_features  # noqa: E402,F401
+from npfeatures import app_frame_vectors, main_hand_is_left, mirror, window_features  # noqa: E402,F401
 
 HAND_COLS = [f"{side}_{axis}{i}" for side in ("lh", "rh") for i in range(NUM_LANDMARKS) for axis in "xyz"]
 
@@ -110,11 +114,11 @@ def load_cache(path):
 def frame_vectors(hands, aspect):
     """numpy version of features.frame_vector for a whole clip; returns (T, 128).
 
-    Holistic names hands from the signer's point of view and the videos are not mirrored. The app runs
-    HandLandmarker on the raw camera image, which labels hands as if the image were mirrored, so the
-    signer's right hand comes out as 'Left' (slot 0) and the signer's left hand as 'Right' (slot 1).
+    The dataset's left hand goes in the app's 'Left' slot. Checked 2026-10-22 by running the app's
+    hand_landmarker.task on 40 raw TSL-51 videos: it called Holistic's left hand 'Left' 97% of the time.
+    (The first model swapped them, which put the signing hand in the wrong slot in the app.)
     """
-    return app_frame_vectors(hands[:, ::-1], aspect)  # slot 0 = dataset right hand, slot 1 = dataset left hand
+    return app_frame_vectors(hands, aspect)
 
 
 def to_frames(hands, aspect):
@@ -122,7 +126,7 @@ def to_frames(hands, aspect):
     frames = []
     for f in hands:
         out = []
-        for idx, name in ((1, "Left"), (0, "Right")):
+        for idx, name in ((0, "Left"), (1, "Right")):
             if not np.isnan(f[idx]).any():
                 out.append({"handedness": name, "landmarks": f[idx].astype(float).tolist()})
         frames.append({"aspect": float(aspect), "hands": out})
@@ -145,6 +149,53 @@ def selftest(args):
         raise SystemExit("numpy features drifted from features.py")
 
 
+def track_video(path):
+    """(T, 2, 21, 3) hands from the app's HandLandmarker on one video, in the app's slot order."""
+    import cv2
+    import mediapipe as mp
+    from mediapipe.tasks.python import BaseOptions, vision
+
+    hand_model = str(Path(__file__).resolve().parent.parent / "models" / "hand_landmarker.task")
+    opts = vision.HandLandmarkerOptions(base_options=BaseOptions(model_asset_path=hand_model), running_mode=vision.RunningMode.VIDEO, num_hands=2)
+    out = []
+    with vision.HandLandmarker.create_from_options(opts) as lm:
+        cap = cv2.VideoCapture(path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            res = lm.detect_for_video(image, int(len(out) * 1000 / fps))
+            f = np.full((2, NUM_LANDMARKS, 3), np.nan, np.float32)
+            for hand, handedness in zip(res.hand_landmarks, res.handedness):
+                f[0 if handedness[0].category_name == "Left" else 1] = [[p.x, p.y, p.z] for p in hand]
+            out.append(f)
+    return np.array(out).reshape(-1, 2, NUM_LANDMARKS, 3)
+
+
+def track(args):
+    root = Path(args.data_dir)
+    with open(root / "metadata" / "user_sign_metadata.csv", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    with Pool() as pool:
+        seqs = pool.map(track_video, [str(root / r["video_path"]) for r in rows], chunksize=8)
+    np.savez(
+        args.out,
+        original=np.array([r["video_id"] for r in rows]),
+        hands=np.concatenate(seqs),
+        offsets=np.concatenate([[0], np.cumsum([len(s) for s in seqs])]),
+    )
+    print(f"wrote {args.out}: {len(rows)} videos")
+
+
+def load_tracked(path):
+    """{original video id: (T, 2, 21, 3) hands} from `track`."""
+    d = np.load(path)
+    hands, offsets = d["hands"], d["offsets"]
+    return {str(o): hands[a:b] for o, a, b in zip(d["original"], offsets[:-1], offsets[1:])}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -155,6 +206,10 @@ def main():
     p = sub.add_parser("selftest")
     p.add_argument("cache")
     p.set_defaults(fn=selftest)
+    p = sub.add_parser("track")
+    p.add_argument("data_dir")
+    p.add_argument("--out", default="data/tsl51-user-app.npz")
+    p.set_defaults(fn=track)
     args = ap.parse_args()
     args.fn(args)
 
