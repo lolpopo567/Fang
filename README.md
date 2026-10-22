@@ -47,6 +47,8 @@ js/sign/features.js          landmarks -> normalized 128-value frame vectors (pu
 js/sign/recognizer.js        Offline/Online/Hybrid recognizer interface
 sw.js, manifest.webmanifest  offline cache + installable app
 vendor/mediapipe, models     bundled MediaPipe runtime + hand model (Apache-2.0)
+vendor/fonts                 IBM Plex Sans Thai, bundled for offline use (SIL OFL 1.1)
+css/icons.css                line icons from Lucide (ISC), drawn as CSS masks
 ```
 
 ## Roadmap

@@ -1,10 +1,17 @@
 // Offline support: app shell is precached; the large MediaPipe files are cached the first time
 // the camera is used, so later visits work without a connection.
-const CACHE = 'fang-v5';
+const CACHE = 'fang-v8';
 const SHELL = [
   './',
   'index.html',
+  'css/icons.css',
   'css/app.css',
+  'vendor/fonts/plex-thai-thai-400.woff2',
+  'vendor/fonts/plex-thai-thai-600.woff2',
+  'vendor/fonts/plex-thai-thai-700.woff2',
+  'vendor/fonts/plex-thai-latin-400.woff2',
+  'vendor/fonts/plex-thai-latin-600.woff2',
+  'vendor/fonts/plex-thai-latin-700.woff2',
   'js/app.js',
   'js/i18n.js',
   'js/store.js',
@@ -15,7 +22,7 @@ const SHELL = [
   'js/sign/recognizer.js',
   'js/sign/model.js',
   'manifest.webmanifest',
-  'icons/icon.svg',
+  'icons/favicon-32.png',
   'icons/icon-192.png',
   'icons/icon-512.png'
 ];

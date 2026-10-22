@@ -20,6 +20,11 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
 
   await page.goto(base);
+  // The app opens on the home screen with a card for each mode.
+  await page.waitForSelector('#tab-home:not([hidden])');
+  assert.equal(await page.locator('.mode-card').count(), 4);
+  await page.screenshot({ path: path.join(root, 'tests/out-home.png') });
+  await page.click('.mode-card[href="#captions"]');
   await assert.doesNotReject(page.waitForSelector('text=เริ่มฟัง'));
   await page.screenshot({ path: path.join(root, 'tests/out-captions.png') });
 
@@ -32,9 +37,21 @@ try {
   assert.ok((await page.textContent('#phrase-list')).includes('สวัสดีครับ'));
   await page.screenshot({ path: path.join(root, 'tests/out-speak.png') });
 
+  // Settings: UI language, and the caption size copy drives the real caption slider.
+  await page.click('#open-settings');
   await page.selectOption('#ui-lang', 'en');
-  assert.ok(await page.isVisible('text=Type to speak'));
+  assert.ok((await page.textContent('#nav-speak')).includes('Type to speak'));
+  await page.$eval('#set-caption-size', (el) => { el.value = '50'; el.dispatchEvent(new Event('input')); });
+  assert.equal(await page.inputValue('#caption-size'), '50');
+  assert.equal(await page.$eval('#caption-box', (el) => el.style.fontSize), '50px');
+  await page.selectOption('#theme', 'dark');
+  assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
+  await page.screenshot({ path: path.join(root, 'tests/out-settings.png'), fullPage: true });
+  await page.selectOption('#theme', 'auto');
   await page.selectOption('#ui-lang', 'th');
+  // The phone back button returns to the previous screen.
+  await page.goBack();
+  assert.ok(await page.isVisible('#tab-speak'));
 
   await page.click('#nav-sign');
   await page.click('#sign-toggle');
@@ -52,6 +69,7 @@ try {
 
   // Switching to ASL loads models/asl-model.json the same way.
   await page.selectOption('#sign-lang', 'ase');
+  assert.equal(await page.inputValue('#set-sign-lang'), 'ase');
   await page.waitForFunction(() => {
     const meta = document.getElementById('result-meta').textContent;
     return meta && !meta.includes('ยังไม่มีโมเดล');
