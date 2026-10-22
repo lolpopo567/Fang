@@ -185,6 +185,18 @@ main { max-width: 760px; margin: 0 auto; padding: 16px 16px 24px; }
 .hero-kicker { margin: 0; font-size: 1rem; opacity: 0.9; }
 .hero-title { margin: 2px 0 6px; font-size: 1.85rem; line-height: 1.2; letter-spacing: -0.01em; }
 .hero-sub { margin: 0; font-size: 1rem; opacity: 0.92; }
+.hero-kicker, .hero-title, .hero-sub { position: relative; z-index: 1; }
+.hero-kicker, .hero-title { padding-inline-end: 96px; }
+.hero .wave { margin-top: 76px; margin-inline-end: 124px; }
+.hero .wave i:nth-child(n+21) { display: none; }
+/* Mascot: the white blue-eyed kitten sits on the sound waves */
+.hero-cat {
+  position: absolute; z-index: 1; right: 16px; bottom: 8px; width: 108px; height: auto;
+  filter: drop-shadow(0 8px 14px rgb(8 20 60 / 0.35));
+  transform: rotate(6deg); transform-origin: bottom center;
+  animation: bob 4s ease-in-out infinite;
+}
+@keyframes bob { 50% { transform: rotate(2deg) translateY(-4px); } }
 /* Sound-wave bars like the app icon; decoration only */
 .wave { display: flex; align-items: flex-end; gap: 4px; height: 44px; margin: 18px 0 0; opacity: 0.85; }
 .wave i {
@@ -302,6 +314,15 @@ input[type="range"] { accent-color: var(--tone, var(--accent)); min-height: 48px
 .caption-box.is-live { border-color: var(--live); box-shadow: 0 0 0 6px color-mix(in srgb, var(--live) 18%, transparent), 0 20px 40px -24px rgb(0 0 0 / 0.6); }
 .caption-box p { margin: 0 0 0.4em; overflow-wrap: anywhere; }
 .caption-box .placeholder { color: #a3adbd; font-size: max(0.55em, 18px); font-weight: 400; line-height: 1.5; }
+.caption-box .placeholder:only-child {
+  /* empty state: the kitten waits under the hint */
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  min-height: 100%; margin: 0; text-align: center;
+}
+.caption-box .placeholder:only-child::before {
+  content: ""; width: 104px; height: 104px; background: url(../img/kitten.webp) center / contain no-repeat;
+  filter: drop-shadow(0 8px 16px rgb(0 0 0 / 0.5));
+}
 .caption-box .interim { color: var(--interim); }
 #caption-toggle { margin-top: 4px; }
 #caption-toggle.is-live { --i: var(--i-stop); --g1: #c81e1e; --g2: #f04438; }
@@ -311,7 +332,7 @@ input[type="range"] { accent-color: var(--tone, var(--accent)); min-height: 48px
 }
 @keyframes pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) {
-  #caption-toggle.is-live::after, .wave i, .tab:not([hidden]) { animation: none; }
+  #caption-toggle.is-live::after, .wave i, .tab:not([hidden]), .hero-cat { animation: none; }
   .btn, .mode-card, .chevron, .icon-btn .icon { transition: none; }
 }
 
@@ -358,7 +379,9 @@ input[type="range"] { accent-color: var(--tone, var(--accent)); min-height: 48px
 .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .mirror { transform: scaleX(-1); }
 .stage-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #a3adbd; }
-.stage-empty .icon { font-size: 2.6rem; opacity: 0.7; }
+.stage-empty .icon { font-size: 1.2rem; opacity: 0.8; }
+.stage-empty-text { display: flex; align-items: center; gap: 8px; }
+.cat-peek { width: 120px; height: auto; filter: drop-shadow(0 10px 18px rgb(0 0 0 / 0.5)); }
 .result {
   margin-top: 12px; padding: 16px 20px;
   position: relative; overflow: hidden;
@@ -393,6 +416,14 @@ input[type="range"] { accent-color: var(--tone, var(--accent)); min-height: 48px
 .settings-group .tile { width: 38px; height: 38px; border-radius: 12px; font-size: 1.1rem; }
 .settings-group .field input[type="range"], .settings-group .field select { width: 100%; }
 .settings-group .btn { justify-self: start; }
+.about {
+  display: flex; align-items: center; gap: 16px; margin-top: 8px; padding: 16px 18px;
+  border-radius: 22px; color: var(--muted); font-size: 0.95rem;
+  background: linear-gradient(120deg, var(--blue-soft), var(--violet-soft));
+}
+.about img { flex: none; width: 76px; height: auto; filter: drop-shadow(0 6px 10px rgb(8 20 60 / 0.2)); }
+.about strong { color: var(--text); font-size: 1.1rem; }
+.about p { margin: 2px 0 0; line-height: 1.45; }
 .caption-preview {
   margin: 0; padding: 12px 16px; border-radius: 12px; overflow-wrap: anywhere;
   background: var(--caption-bg); color: var(--caption-text); line-height: 1.35; font-weight: 600;
@@ -433,6 +464,8 @@ input[type="range"] { accent-color: var(--tone, var(--accent)); min-height: 48px
   .mode-cards .chevron { display: none; }
   .hero { padding: 32px; }
   .hero-title { font-size: 2.3rem; }
+  .hero-cat { width: 150px; right: 28px; }
+  .hero .wave { margin-top: 40px; margin-inline-end: 190px; }
 }
 
 /* Mode colours; last so they override the neutral defaults above. */
