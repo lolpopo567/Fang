@@ -1,5 +1,6 @@
-// Browser smoke test. Usage: node tests/e2e.mjs [fake-camera.y4m]
-// With a y4m of a hand, also asserts that hands are detected.
+// Browser smoke test. Usage: [FANG_E2E_AUDIO=dog-bark.wav] node tests/e2e.mjs [fake-camera.y4m]
+// With a y4m of a hand, also asserts that hands are detected. With a wav of a dog barking as the
+// fake microphone, also asserts that sound alerts fire for it.
 import { chromium } from 'playwright';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -11,18 +12,20 @@ const server = await serve(root);
 const base = `http://localhost:${server.address().port}/`;
 const args = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
 if (video) args.push(`--use-file-for-fake-video-capture=${path.resolve(video)}`);
+const audio = process.env.FANG_E2E_AUDIO;
+if (audio) args.push(`--use-file-for-fake-audio-capture=${path.resolve(audio)}`);
 const browser = await chromium.launch({ args });
 const errors = [];
 
 try {
-  const ctx = await browser.newContext({ permissions: ['camera'], viewport: { width: 390, height: 844 } });
+  const ctx = await browser.newContext({ permissions: ['camera', 'microphone'], viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
 
   await page.goto(base);
   // The app opens on the home screen with a card for each mode.
   await page.waitForSelector('#tab-home:not([hidden])');
-  assert.equal(await page.locator('.mode-card').count(), 4);
+  assert.equal(await page.locator('.mode-card').count(), 5);
   await page.screenshot({ path: path.join(root, 'tests/out-home.png') });
   await page.click('.mode-card[href="#captions"]');
   await assert.doesNotReject(page.waitForSelector('text=เริ่มฟัง'));
@@ -52,6 +55,38 @@ try {
   // The phone back button returns to the previous screen.
   await page.goBack();
   assert.ok(await page.isVisible('#tab-speak'));
+
+  // Sound alerts: the test button shows the full-screen alert, then listening runs YAMNet on the mic.
+  await page.click('#nav-alerts');
+  await page.waitForSelector('#tab-alerts:not([hidden])');
+  assert.equal(await page.locator('#alerts-meters li').count(), 9);
+  await page.click('#alerts-test');
+  assert.ok(await page.isVisible('#alert-flash'));
+  assert.equal(await page.textContent('#alert-flash-name'), 'กริ่งหรือเคาะประตู');
+  await page.click('#alert-flash-close');
+  assert.equal(await page.locator('#alerts-log li').count(), 1);
+  await page.click('#alerts-toggle');
+  await page.waitForFunction(() => document.getElementById('alerts-status').textContent.startsWith('กำลังฟัง'), null, { timeout: 60000 });
+  assert.ok(await page.$eval('#nav-alerts', (el) => el.classList.contains('is-live')));
+  if (audio) {
+    await page.waitForSelector('#alert-flash:not([hidden])', { timeout: 30000 });
+    console.log('sound alert:', await page.textContent('#alert-flash-name'));
+    await page.screenshot({ path: path.join(root, 'tests/out-alert-flash.png') });
+    await page.click('#alert-flash-close');
+  } else {
+    await page.waitForTimeout(2500);
+  }
+  await page.screenshot({ path: path.join(root, 'tests/out-alerts.png'), fullPage: true });
+  await page.click('#alerts-toggle');
+  assert.equal(await page.textContent('#alerts-status'), 'หยุดแล้ว');
+  // Turning a sound off in settings removes its meter.
+  await page.click('#open-settings');
+  await page.waitForSelector('#tab-settings:not([hidden])');
+  await page.click('#alerts-sounds .check-row:has-text("สุนัขเห่า") input');
+  await page.click('#nav-alerts');
+  await page.waitForSelector('#tab-alerts:not([hidden])');
+  assert.equal(await page.locator('#alerts-meters li').count(), 8);
+  await page.click('#alerts-log-clear');
 
   await page.click('#nav-sign');
   await page.click('#sign-toggle');

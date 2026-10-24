@@ -12,6 +12,7 @@ An app for deaf and hard-of-hearing people, starting in Thailand. It's one insta
 | **Recognizer interface** (offline / online / hybrid) | Works. Offline mode uses the bundled TSL-51 model below. | `js/sign/recognizer.js`. Online mode posts landmarks only (never video) to a URL you configure. |
 | **Thai sign model (demo, 51 signs)** | Works as a demo. On a signer it never saw, run through the app's own hand tracker, it gets 68–70% of single signs right (83–84% in its top 3), at any camera frame rate and for left-handed signing; 52–81% on the other held-out signers. Treat it as a guess. Not yet tested on a real phone camera. | `models/tsl-model.json`, a small classifier trained on the [TSL-51](https://huggingface.co/datasets/Namonpas/thai-sign-language-tsl51) landmarks by `training/train_tsl51.py`. **TSL-51 is CC BY-NC-SA 4.0, so this model is for non-commercial use only.** Details in [docs/datasets.md](docs/datasets.md). |
 | **ASL sign model (demo, 250 signs)** | Works as a demo. Pick "American Sign Language" in the sign tab. On 8 Deaf signers it never saw, it gets 64% of single signs right (82% in its top 3), counting only clips where the tracker saw a hand; on the careful one-sign recordings alone, 60% (77%). It averages 4 small networks. Not yet tested on a real phone camera. | `models/asl-model.json`, the same kind of classifier trained on [PopSign ASL v1.0](https://huggingface.co/datasets/sign/popsign-images) by `training/train_popsign.py`, using hand points from the app's own tracker. **PopSign is CC BY 4.0, so commercial use is allowed with credit** (Starner et al., NeurIPS 2023). Details in [docs/datasets.md](docs/datasets.md). |
+| **Sound alerts** (doorbell/knock, baby crying, alarms, sirens, car horn, phone, dog, shouting, glass breaking) | Works as a demo. On ESC-50 recordings it catches 80% of the target sounds at Normal sensitivity, with false alerts on 2.8% of hard other clips. Needs the app open with the screen on. Not yet tested on a real phone. | Google's YAMNet sound classifier (Apache-2.0, 4 MB) runs **on the device** with MediaPipe Tasks Audio; no audio leaves the phone. Flashes the screen, vibrates, and can notify. Details in [docs/sound-alerts.md](docs/sound-alerts.md). |
 | **Dataset recorder** | Works. | Records 2-second landmark sequences with a label and an optional signer code, and exports JSON (`fang-handframes-v1`). No video is stored. |
 
 ## What it does NOT do yet
@@ -32,21 +33,25 @@ Camera and microphone need **HTTPS** (or `localhost`). To use it on a phone, hos
 ## Tests
 
 ```bash
-npm test                                   # unit tests: features, recognizers, hybrid fallback
+npm test                                   # unit tests: features, recognizers, hybrid fallback, alert logic
 node tests/e2e.mjs path/to/hand-video.y4m  # browser test with a fake camera
+FANG_E2E_AUDIO=dog.wav node tests/e2e.mjs  # also checks a sound alert fires from a fake microphone
+node tests/eval_alerts.mjs esc50.csv audio/ out.json  # score sound alerts on ESC-50 clips
 ```
 
 ## Structure
 
 ```
-index.html, css/app.css      UI (3 tabs, Thai-first, large touch targets, dark mode)
+index.html, css/app.css      UI (4 modes, Thai-first, large touch targets, dark mode)
 js/captions.js               live captions
 js/speak.js                  type-to-speak, quick phrases, large text
 js/sign/sign.js              camera, MediaPipe, overlay, stats, recorder
 js/sign/features.js          landmarks -> normalized 128-value frame vectors (pure, unit-tested)
 js/sign/recognizer.js        Offline/Online/Hybrid recognizer interface
+js/alerts/alerts.js          sound alerts: microphone, YAMNet, flash/vibrate/notify, history
+js/alerts/sounds.js          which sounds alert and when (pure, unit-tested)
 sw.js, manifest.webmanifest  offline cache + installable app
-vendor/mediapipe, models     bundled MediaPipe runtime + hand model (Apache-2.0)
+vendor/mediapipe, models     bundled MediaPipe vision + audio runtimes, hand model, YAMNet (Apache-2.0)
 vendor/fonts                 IBM Plex Sans Thai, bundled for offline use (SIL OFL 1.1)
 css/icons.css                line icons from Lucide (ISC), drawn as CSS masks
 ```

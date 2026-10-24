@@ -85,3 +85,44 @@ test('hybrid mode falls back from offline to online', async () => {
   online.endpoint = '';
   assert.equal((await hub.predict([])).status, 'no_model');
 });
+
+test('sound alert groups take the best score among their classes', async () => {
+  const { groupScores } = await import('../js/alerts/sounds.js');
+  const s = groupScores([{ categoryName: 'Knock', score: 0.4 }, { categoryName: 'Doorbell', score: 0.7 }, { categoryName: 'Bark', score: 0.2 }]);
+  assert.equal(s.door, 0.7);
+  assert.equal(s.dog, 0.2);
+  assert.equal(s.baby, 0);
+});
+
+test('every alert label is a real YAMNet class', async () => {
+  const { ALL_LABELS } = await import('../js/alerts/sounds.js');
+  // The model file ends with a zip holding yamnet_label_list.txt (stored uncompressed).
+  const fs = await import('node:fs');
+  const model = fs.readFileSync(new URL('../models/yamnet.tflite', import.meta.url)).toString('latin1');
+  const labels = new Set(model.slice(model.lastIndexOf('Speech\n')).split('\n'));
+  for (const l of ALL_LABELS) assert.ok(labels.has(l), l);
+});
+
+test('alert detector needs two loud windows and then waits out the cooldown', async () => {
+  const { AlertDetector } = await import('../js/alerts/sounds.js');
+  const d = new AlertDetector({ threshold: 0.3, frames: 2, cooldownMs: 10000, enabled: new Set(['door', 'dog']) });
+  assert.deepEqual(d.push({ door: 0.5 }, 0), []);          // (0.5 + 0) / 2 is under 0.3
+  assert.deepEqual(d.push({ door: 0.2 }, 500).map((a) => a.id), ['door']); // (0.5 + 0.2) / 2 = 0.35
+  assert.deepEqual(d.push({ door: 0.9 }, 1000), []);       // cooling down
+  assert.deepEqual(d.push({ door: 0.9, dog: 0.8 }, 11000).map((a) => a.id), ['door', 'dog']);
+  assert.deepEqual(d.push({ baby: 1 }, 12000), []);        // baby is not enabled; door and dog still cooling down
+  const quiet = new AlertDetector({ threshold: 0.3 });
+  assert.deepEqual([0.5, 0.05, 0.5, 0.05].flatMap((v, i) => quiet.push({ door: v }, i * 500)), []);
+});
+
+test('ring buffer keeps the newest samples', async () => {
+  const { RingBuffer } = await import('../js/alerts/sounds.js');
+  const b = new RingBuffer(4);
+  b.push(new Float32Array([1, 2, 3]));
+  assert.equal(b.full, false);
+  b.push(new Float32Array([4, 5]));
+  assert.deepEqual([...b.data], [2, 3, 4, 5]);
+  b.push(new Float32Array([6, 7, 8, 9, 10]));
+  assert.deepEqual([...b.data], [7, 8, 9, 10]);
+  assert.ok(b.full);
+});
