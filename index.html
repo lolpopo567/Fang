@@ -66,12 +66,16 @@
       <header class="screen-head tone-blue">
         <span class="tile" aria-hidden="true"><span class="icon i-captions"></span></span>
         <div><h2 class="screen-title" data-i18n="nav.captions"></h2><p class="screen-sub" data-i18n="home.captionsDesc"></p></div>
+        <a href="#history" class="btn small head-action ico i-history" id="open-history" data-i18n="history.open"></a>
       </header>
       <div class="notice warn" id="captions-unsupported" hidden><span class="icon i-alert" aria-hidden="true"></span><span data-i18n="captions.unsupported"></span></div>
       <div id="caption-box" class="caption-box" aria-live="polite" aria-atomic="false">
         <p class="placeholder" data-i18n="captions.placeholder"></p>
       </div>
-      <p class="status" id="caption-status" role="status"></p>
+      <div class="status-row">
+        <p class="status" id="caption-status" role="status"></p>
+        <a href="#settings" class="engine-badge" id="caption-engine-badge" hidden><span class="icon i-cloud" aria-hidden="true"></span><span></span></a>
+      </div>
       <button id="caption-toggle" class="btn primary big wide ico i-mic" data-i18n="captions.start"></button>
       <label class="size-row">
         <span class="sr-only" data-i18n="captions.textSize"></span>
@@ -84,7 +88,36 @@
         <button id="caption-save" class="btn ico i-download" data-i18n="captions.save"></button>
         <button id="caption-clear" class="btn ico i-trash" data-i18n="captions.clear"></button>
       </div>
-      <p class="fineprint"><span class="icon i-lock" aria-hidden="true"></span><span data-i18n="captions.privacy"></span></p>
+      <p class="fineprint"><span class="icon i-lock" aria-hidden="true"></span><span id="caption-privacy" data-i18n="captions.privacy"></span></p>
+    </section>
+
+    <!-- Saved transcripts -->
+    <section id="tab-history" class="tab tone-blue" role="tabpanel" aria-labelledby="open-history" hidden>
+      <header class="screen-head tone-blue">
+        <span class="tile" aria-hidden="true"><span class="icon i-history"></span></span>
+        <div><h2 class="screen-title" data-i18n="history.title"></h2><p class="screen-sub" data-i18n="history.subtitle"></p></div>
+      </header>
+      <div id="history-list-view">
+        <label class="search">
+          <span class="icon i-search" aria-hidden="true"></span>
+          <span class="sr-only" data-i18n="history.search"></span>
+          <input id="history-search" type="search" autocomplete="off">
+        </label>
+        <ul id="history-list" class="history-list"></ul>
+        <div class="empty-state" id="history-empty" hidden><img src="img/kitten.webp" alt="" width="477" height="480"><span></span></div>
+      </div>
+      <div id="history-detail" hidden>
+        <button id="history-back" class="btn small ghost ico i-arrow-left" data-i18n="history.back"></button>
+        <h3 class="history-title" id="history-title"></h3>
+        <p class="screen-sub" id="history-meta"></p>
+        <div class="transcript" id="history-lines"></div>
+        <div class="action-row">
+          <button id="history-copy" class="btn ico i-copy" data-i18n="captions.copy"></button>
+          <button id="history-download" class="btn ico i-download" data-i18n="captions.save"></button>
+          <button id="history-delete" class="btn ico i-trash" data-i18n="history.delete"></button>
+        </div>
+        <p class="status" id="history-status" role="status"></p>
+      </div>
     </section>
 
     <!-- Type to speak -->
@@ -195,10 +228,35 @@
           </select>
         </label>
         <label class="field">
+          <span data-i18n="captions.engine"></span>
+          <select id="caption-engine">
+            <option value="auto" data-i18n="captions.engineAuto"></option>
+            <option value="browser" data-i18n="captions.engineBrowserOpt"></option>
+            <option value="device" data-i18n="captions.engineDeviceOpt"></option>
+          </select>
+        </label>
+        <div class="pack">
+          <div class="pack-head"><span class="icon i-wifi-off" aria-hidden="true"></span><strong data-i18n="pack.title"></strong></div>
+          <p class="pack-state" id="pack-state" role="status"></p>
+          <progress id="pack-progress" max="1" value="0" hidden></progress>
+          <button id="pack-download" class="btn ico i-download" data-i18n="pack.download" hidden></button>
+          <button id="pack-delete" class="btn ghost ico i-trash" data-i18n="pack.delete" hidden></button>
+          <p class="fineprint" data-i18n="pack.about"></p>
+        </div>
+        <label class="field">
           <span data-i18n="captions.textSize"></span>
           <input id="set-caption-size" type="range" min="20" max="72" value="34">
         </label>
         <p class="caption-preview" id="caption-preview" data-i18n="settings.preview"></p>
+        <label class="check">
+          <input id="caption-autosave" type="checkbox" checked>
+          <span><strong data-i18n="history.autoSave"></strong><span data-i18n="history.autoSaveHelp"></span></span>
+        </label>
+        <div class="row-actions">
+          <a href="#history" class="btn ico i-history" data-i18n="history.open"></a>
+          <button id="history-clear-all" class="btn ghost ico i-trash" data-i18n="history.clearAll"></button>
+        </div>
+        <p class="status" id="history-clear-status" role="status"></p>
       </fieldset>
 
       <fieldset class="settings-group tone-orange">

@@ -1,6 +1,8 @@
 // Offline support: app shell is precached; the large MediaPipe files are cached the first time
-// the camera is used, so later visits work without a connection.
-const CACHE = 'fang-v11';
+// the camera is used, so later visits work without a connection. The offline speech pack lives
+// in its own cache (fang-speech-*, see js/offline/pack.js), which app updates leave alone.
+const CACHE = 'fang-v12';
+const KEEP = (key) => key === CACHE || key.startsWith('fang-speech-');
 const SHELL = [
   './',
   'index.html',
@@ -16,6 +18,16 @@ const SHELL = [
   'js/i18n.js',
   'js/store.js',
   'js/captions.js',
+  'js/transcripts.js',
+  'js/history.js',
+  'js/offline/pack.js',
+  'js/offline/settings.js',
+  'js/offline/engine.js',
+  'js/offline/capture-worklet.js',
+  'js/offline/asr-worker.js',
+  'js/offline/fbank.js',
+  'js/offline/transducer.js',
+  'js/offline/segmenter.js',
   'js/speak.js',
   'js/sign/sign.js',
   'js/sign/features.js',
@@ -35,7 +47,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => !KEEP(k)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -53,6 +65,6 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request))
+      .catch(async () => (await caches.match(e.request, { cacheName: CACHE })) || caches.match(e.request))
   );
 });
