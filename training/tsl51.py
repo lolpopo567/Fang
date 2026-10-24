@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from features import NUM_LANDMARKS  # noqa: E402
+from features import NUM_LANDMARKS, WRIST  # noqa: E402
 from npfeatures import app_frame_vectors, main_hand_is_left, mirror, window_features  # noqa: E402,F401
 
 HAND_COLS = [f"{side}_{axis}{i}" for side in ("lh", "rh") for i in range(NUM_LANDMARKS) for axis in "xyz"]
@@ -111,14 +111,14 @@ def load_cache(path):
     return clips, meta
 
 
-def frame_vectors(hands, aspect):
-    """numpy version of features.frame_vector for a whole clip; returns (T, 128).
+def frame_vectors(hands, aspect, hand_position=False):
+    """numpy version of features.frame_vector for a whole clip; returns (T, 128), or (T, 134) with hand_position.
 
     The dataset's left hand goes in the app's 'Left' slot. Checked 2026-10-22 by running the app's
     hand_landmarker.task on 40 raw TSL-51 videos: it called Holistic's left hand 'Left' 97% of the time.
     (The first model swapped them, which put the signing hand in the wrong slot in the app.)
     """
-    return app_frame_vectors(hands, aspect)
+    return app_frame_vectors(hands, aspect, hand_position)
 
 
 def to_frames(hands, aspect):
@@ -150,14 +150,15 @@ def selftest(args):
 
 
 def track_video(path):
-    """(T, 2, 21, 3) hands from the app's HandLandmarker on one video, in the app's slot order."""
+    """The app's HandLandmarker on one video: up to 2 hands per frame in the tracker's order, as
+    (T, 2, 21, 3) landmarks (NaN when absent), (T, 2) labels (0 'Left', 1 'Right', -1 absent) and (T, 2) scores."""
     import cv2
     import mediapipe as mp
     from mediapipe.tasks.python import BaseOptions, vision
 
     hand_model = str(Path(__file__).resolve().parent.parent / "models" / "hand_landmarker.task")
     opts = vision.HandLandmarkerOptions(base_options=BaseOptions(model_asset_path=hand_model), running_mode=vision.RunningMode.VIDEO, num_hands=2)
-    out = []
+    hands, labels, scores = [], [], []
     with vision.HandLandmarker.create_from_options(opts) as lm:
         cap = cv2.VideoCapture(path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -166,12 +167,18 @@ def track_video(path):
             if not ok:
                 break
             image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            res = lm.detect_for_video(image, int(len(out) * 1000 / fps))
-            f = np.full((2, NUM_LANDMARKS, 3), np.nan, np.float32)
-            for hand, handedness in zip(res.hand_landmarks, res.handedness):
-                f[0 if handedness[0].category_name == "Left" else 1] = [[p.x, p.y, p.z] for p in hand]
-            out.append(f)
-    return np.array(out).reshape(-1, 2, NUM_LANDMARKS, 3)
+            res = lm.detect_for_video(image, int(len(hands) * 1000 / fps))
+            h = np.full((2, NUM_LANDMARKS, 3), np.nan, np.float32)
+            lb = np.full(2, -1, np.int8)
+            sc = np.zeros(2, np.float32)
+            for k, (hand, handedness) in enumerate(zip(res.hand_landmarks[:2], res.handedness[:2])):
+                h[k] = [[p.x, p.y, p.z] for p in hand]
+                lb[k] = 0 if handedness[0].category_name == "Left" else 1
+                sc[k] = handedness[0].score
+            hands.append(h)
+            labels.append(lb)
+            scores.append(sc)
+    return np.array(hands).reshape(-1, 2, NUM_LANDMARKS, 3), np.array(labels).reshape(-1, 2), np.array(scores).reshape(-1, 2)
 
 
 def track(args):
@@ -179,21 +186,56 @@ def track(args):
     with open(root / "metadata" / "user_sign_metadata.csv", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     with Pool() as pool:
-        seqs = pool.map(track_video, [str(root / r["video_path"]) for r in rows], chunksize=8)
+        res = pool.map(track_video, [str(root / r["video_path"]) for r in rows], chunksize=8)
     np.savez(
         args.out,
         original=np.array([r["video_id"] for r in rows]),
-        hands=np.concatenate(seqs),
-        offsets=np.concatenate([[0], np.cumsum([len(s) for s in seqs])]),
+        hands=np.concatenate([r[0] for r in res]),
+        labels=np.concatenate([r[1] for r in res]),
+        scores=np.concatenate([r[2] for r in res]),
+        offsets=np.concatenate([[0], np.cumsum([len(r[0]) for r in res])]),
     )
     print(f"wrote {args.out}: {len(rows)} videos")
 
 
+def label_hands(hands, labels, scores, aspect, step=1):
+    """Replays the app's HandLabeler (js/sign/features.js) over a tracked clip, keeping every `step`-th
+    frame (a slower camera); returns (T', 2, 21, 3) in the app's slot order."""
+    hands, labels, scores = hands[::step], labels[::step], scores[::step]
+    out = np.full(hands.shape, np.nan, np.float32)
+    last = [None, None]
+
+    def dist(w, s):
+        return np.hypot((w[0] - last[s][0]) * aspect, w[1] - last[s][1]) if last[s] is not None else np.inf
+
+    for t in range(len(hands)):
+        ks = [k for k in (0, 1) if labels[t, k] >= 0]
+        wr = [hands[t, k, WRIST] for k in ks]
+        if len(ks) == 1:
+            slots = [int(labels[t, ks[0]])]
+        elif len(ks) == 2:
+            a, b = (int(labels[t, k]) for k in ks)
+            if a != b:
+                slots = [a, b]
+            elif last[0] is not None and last[1] is not None:
+                slots = [0, 1] if dist(wr[0], 0) + dist(wr[1], 1) <= dist(wr[0], 1) + dist(wr[1], 0) else [1, 0]
+            else:
+                keep = 0 if scores[t, ks[0]] >= scores[t, ks[1]] else 1
+                s = (a, b)[keep]
+                slots = [s, 1 - s] if keep == 0 else [1 - s, s]
+        else:
+            slots = []
+        for k, s, w in zip(ks, slots, wr):
+            last[s] = w
+            out[t, s] = hands[t, k]
+    return out
+
+
 def load_tracked(path):
-    """{original video id: (T, 2, 21, 3) hands} from `track`."""
+    """{original video id: (hands, labels, scores)} from `track`."""
     d = np.load(path)
-    hands, offsets = d["hands"], d["offsets"]
-    return {str(o): hands[a:b] for o, a, b in zip(d["original"], offsets[:-1], offsets[1:])}
+    hands, labels, scores, offsets = d["hands"], d["labels"], d["scores"], d["offsets"]
+    return {str(o): (hands[a:b], labels[a:b], scores[a:b]) for o, a, b in zip(d["original"], offsets[:-1], offsets[1:])}
 
 
 def main():

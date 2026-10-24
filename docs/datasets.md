@@ -41,27 +41,43 @@ pip install numpy pandas torch                          # torch: CPU build is en
 python training/tsl51.py prepare data/tsl51 --out data/tsl51.npz
 python training/tsl51.py selftest data/tsl51.npz        # numpy features == features.py
 python training/tsl51.py track data/tsl51 --out data/tsl51-user-app.npz   # needs mediapipe + opencv, ~5 min
-python training/train_tsl51.py data/tsl51.npz --test-signers ""   # the shipped model, ~5 min on 4 CPUs
+python training/train_tsl51.py data/tsl51.npz --test-signers ""   # the shipped model, ~15 min on 4 CPUs
 python training/train_tsl51.py data/tsl51.npz --test-signers user_01 --app-test data/tsl51-user-app.npz  # a score
 ```
 
-Results (2026-10-22, second model), 52 classes (51 signs + `null_act`), one prediction per clip, centred on the movement:
+Results (2026-10-24, third model), 52 classes (51 signs + `null_act`), one prediction per clip, centred on the movement:
 
-| Held-out signer | Trained on | Clips | Top-1 | Top-3 | First model (top-1 / top-3) |
-|---|---|---|---|---|---|
-| user_01 (researcher, 640x480 webcam) | both interpreters | 547 | 69% | 90% | 60% / 84% |
-| user_01, landmarks from **the app's own tracker** | both interpreters | 547 | 62% | 85% | **7% / 13%** (hand mix-up, below) |
-| expert_02 (interpreter) | expert_01 + user_01 | 552 | 72% | 91% | 55% / 78% |
-| expert_01 (interpreter, 46 signs) | expert_02 + user_01 | 481 | 45% | 76% | 42% / 63% |
+| Held-out signer | Trained on | Clips | Top-1 | Top-3 | Second model | First model |
+|---|---|---|---|---|---|---|
+| user_01 (researcher, 640x480 webcam) | both interpreters | 547 | 76% | 90% | 69% / 90% | 60% / 84% |
+| user_01, landmarks from **the app's own tracker** | both interpreters | 547 | 67% | 83% | 63% / 83% | **7% / 13%** |
+| expert_02 (interpreter) | expert_01 + user_01 | 552 | 81% | 94% | 72% / 91% | 55% / 78% |
+| expert_01 (interpreter, 46 signs) | expert_02 + user_01 | 481 | 52% | 81% | 45% / 76% | 42% / 63% |
 
-The app-tracker row is the closest to real use: the researcher's videos run through `models/hand_landmarker.task`, then
-through the same steps as `MlpModel.predict` (`train.model_probs`). It stays at 60-63% top-1 whether the camera
-delivers 10, 15 or 30 frames a second, and is the same for mirrored (left-handed) signing. The shipped
-`models/tsl-model.json` uses these settings trained on all three signers; its `report` holds these numbers. Random
-guessing would be 2%. With only 3 signers, a new person should still expect roughly half to two thirds right, lower
-with a different camera angle or lighting.
+The app-tracker row is the closest to real use: the researcher's videos run through `models/hand_landmarker.task`, the
+app's `HandLabeler` (replayed by `tsl51.label_hands`), then the same steps as `MlpModel.predict` (`train.model_probs`).
+Through that exact path the third model gets 67.5% / 69.7% / 68.7% top-1 with the camera at 30 / 15 / 10 fps (second
+model 62.5 / 63.3 / 64.0), and the same for mirrored (left-handed) signing. Top-3 stays around 83-84% for both, so the
+gain is mostly in getting the first guess right. The shipped `models/tsl-model.json` uses these settings trained on all
+three signers; its `report` holds these numbers. Random guessing would be 2%. With only 3 signers, a new person should
+expect roughly half to three quarters right, lower with a different camera angle or lighting.
 
-What changed from the first model, in order of effect:
+**Guarding against overfitting (third model).** Every setting was chosen on the average of all three leave-one-signer-out
+folds, each run with 2 random seeds (one fold moves by about 2 points between seeds, so smaller differences were treated
+as noise), never on training accuracy. The shipped model is then retrained on all signers with the chosen settings
+unchanged. What the third model changed, averaged over the three folds (61.6% -> 70.3% top-1):
+
+1. **`handPosition`** (added for the ASL model): where each wrist is in the frame and how big the hand looks, so signs
+   made at the chin and at the chest no longer look alike. Training randomly shifts and zooms the whole frame (about
+   ±2.5% and ±5%) so the model doesn't learn one camera's framing: +4.4 points.
+2. **Dropout 0.5** instead of 0.3, and **30 epochs** instead of 10: +3.5. 40 or 60 epochs (with dropout 0.6) were no
+   better.
+3. **Simulated cameras down to 5 fps** instead of 8, for slow phones: no change in score, kept for robustness.
+
+Tried without gain: averaging 2-6 networks (under 1 point, and each doubles the download), 512-unit layers, stronger
+weight decay, random time warping, more landmark noise, input dropout.
+
+What the second model changed from the first, in order of effect:
 
 1. **Hand mix-up fixed.** The first adapter put the signer's right hand in the app's `Left` slot, based on MediaPipe's
    docs. Running the app's tracker on 40 raw TSL-51 videos showed it names Holistic's left hand `Left` 97% of the time,
@@ -84,8 +100,9 @@ Tried without gain: a small temporal conv net on the 24 frames (same top-1, lowe
 
 Things to know:
 
-- Only the 2 x 21 hand points are used, because the app runs the hand tracker only. Signs that differ mainly by where
-  the hand is on the body (face vs chest) are the most confused.
+- Only the 2 x 21 hand points are used, because the app runs the hand tracker only. Where the hands are is known only
+  relative to the camera frame (`handPosition`), not to the face or body, so signs that differ mainly by body location
+  are still the most confused.
 - Coordinates are corrected for the frame's aspect ratio (new `aspect` field on each HandFrame), so a portrait phone and
   a landscape webcam give the same hand shape. Old recordings without the field are read as aspect 1.
 - When fewer than 30% of the frames in a window contain a hand, the app shows "no sign" without asking the model.
