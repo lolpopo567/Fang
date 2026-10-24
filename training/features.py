@@ -87,14 +87,17 @@ def main_hand_is_left(frames):
     return moved[0] > moved[1]
 
 
-def sequence_features(frames, version=1, canonical_hand=False, hand_position=False):
+def sequence_features(frames, version=1, canonical_hand=False, hand_position=False, mirrored=False):
     """[mean, std, mean(second half) - mean(first half)] over frame vectors; 384 values.
     Version 2 adds the mean of each of SEGMENTS equal parts of the window (896 values), which keeps
     the order of movements; canonical_hand mirrors windows led by the 'Left' slot hand; hand_position
-    uses 134-value frame vectors (see frame_vector)."""
+    uses 134-value frame vectors (see frame_vector); mirrored mirrors every frame (after canonical_hand),
+    for models with mirrorAverage."""
     vecs = [frame_vector(f, hand_position) for f in frames]
     dim = FRAME_DIM + (6 if hand_position else 0)
     if canonical_hand and main_hand_is_left(frames):
+        vecs = [mirror_vector(v) for v in vecs]
+    if mirrored:
         vecs = [mirror_vector(v) for v in vecs]
     n = len(vecs)
     if n == 0:
