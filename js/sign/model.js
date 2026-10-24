@@ -75,10 +75,12 @@ export function mainHandIsLeft(frames) {
  * Mean/std capture the hand shape; the half difference captures the direction of movement.
  * Version 2 adds the mean of each quarter of the window (7 x 128 values), which keeps the order of movements.
  * handPosition makes each frame vector 134 values (see frameVector).
+ * mirrored mirrors every frame (after canonicalHand), for models with mirrorAverage.
  */
-export function sequenceFeatures(frames, { version = 1, canonicalHand = false, handPosition = false } = {}) {
+export function sequenceFeatures(frames, { version = 1, canonicalHand = false, handPosition = false, mirrored = false } = {}) {
   let vecs = frames.map((f) => frameVector(f, handPosition));
   if (canonicalHand && mainHandIsLeft(frames)) vecs = vecs.map(mirrorVector);
+  if (mirrored) vecs = vecs.map(mirrorVector);
   const n = vecs.length;
   const d = vecs[0]?.length ?? (handPosition ? 134 : 128);
   const mean = new Array(d).fill(0);
@@ -111,10 +113,25 @@ export function sequenceFeatures(frames, { version = 1, canonicalHand = false, h
   return [...mean, ...std, ...delta, ...segments.flat()];
 }
 
+/**
+ * A weight matrix from the model JSON: plain rows, or the compact int8 form from training/train.py
+ * encode_matrix, { q8: base64 int8 row-major, rows, cols, scale: per-row }, where W[r][c] = q8 * scale[r].
+ */
+export function decodeMatrix(w) {
+  if (!w.q8) return w;
+  const bytes = Uint8Array.from(atob(w.q8), (c) => c.charCodeAt(0));
+  const q = new Int8Array(bytes.buffer);
+  return Array.from({ length: w.rows }, (_, r) => Float64Array.from(q.subarray(r * w.cols, (r + 1) * w.cols), (v) => v * w.scale[r]));
+}
+
 export class MlpModel {
   constructor(json) {
     if (json.format !== MODEL_FORMAT) throw new Error(`unsupported model format ${json.format}`);
     Object.assign(this, json);
+    // `ensemble` [{layers}, ...] averages several nets; `layers` [{W, b}, ...] is one net with ReLU between
+    // layers; older models have one hidden layer as W1/b1/W2/b2.
+    const nets = json.ensemble ?? [{ layers: json.layers ?? [{ W: json.W1, b: json.b1 }, { W: json.W2, b: json.b2 }] }];
+    this.nets = nets.map((net) => net.layers.map(({ W, b }) => ({ W: decodeMatrix(W), b })));
   }
 
   static async load(url) {
@@ -134,22 +151,36 @@ export class MlpModel {
     // Models trained on frames where the tracker often missed the hands (PopSign) skip hand-less frames.
     if (this.skipEmptyFrames) frames = withHands;
     const opts = { version: this.features ?? 1, canonicalHand: Boolean(this.canonicalHand), handPosition: Boolean(this.handPosition) };
-    let h = sequenceFeatures(frames, opts).map((v, i) => (v - this.mean[i]) / this.std[i]);
-    // `layers` [{W, b}, ...] with ReLU between them; older models have one hidden layer as W1/b1/W2/b2.
-    const layers = this.layers ?? [{ W: this.W1, b: this.b1 }, { W: this.W2, b: this.b2 }];
-    layers.forEach(({ W, b }, l) => {
-      h = b.map((bias, k) => bias + dot(W[k], h));
-      if (l < layers.length - 1) h = h.map((v) => Math.max(0, v));
-    });
-    const logits = h;
-    const max = Math.max(...logits);
-    const exps = logits.map((l) => Math.exp(l - max));
-    const sum = exps.reduce((a, b) => a + b, 0);
-    const ranked = exps
-      .map((e, c) => ({ label: this.labels[c], text: this.display?.[this.labels[c]] ?? this.labels[c], confidence: e / sum }))
+    // mirrorAverage: also score the window as a left-handed signer would make it, and average.
+    const views = (this.mirrorAverage ? [false, true] : [false]).map((mirrored) =>
+      sequenceFeatures(frames, { ...opts, mirrored }).map((v, i) => (v - this.mean[i]) / this.std[i]));
+    const probs = new Array(this.labels.length).fill(0);
+    for (const layers of this.nets) {
+      for (const x of views) {
+        const p = softmax(forward(layers, x));
+        p.forEach((v, c) => { probs[c] += v / (this.nets.length * views.length); });
+      }
+    }
+    const ranked = probs
+      .map((p, c) => ({ label: this.labels[c], text: this.display?.[this.labels[c]] ?? this.labels[c], confidence: p }))
       .sort((a, b) => b.confidence - a.confidence);
     return { ...ranked[0], alternatives: ranked.slice(1, 4) };
   }
+}
+
+function forward(layers, h) {
+  layers.forEach(({ W, b }, l) => {
+    h = b.map((bias, k) => bias + dot(W[k], h));
+    if (l < layers.length - 1) h = h.map((v) => Math.max(0, v));
+  });
+  return h;
+}
+
+function softmax(logits) {
+  const max = Math.max(...logits);
+  const exps = logits.map((l) => Math.exp(l - max));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map((e) => e / sum);
 }
 
 function dot(w, x) {
