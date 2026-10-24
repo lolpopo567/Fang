@@ -3,6 +3,8 @@ import { load, save } from './store.js';
 import { initCaptions } from './captions.js';
 import { initSpeak } from './speak.js';
 import { initSign } from './sign/sign.js';
+import { initHistory } from './history.js';
+import { initSpeechPack } from './offline/settings.js';
 
 const langSel = document.getElementById('ui-lang');
 langSel.value = load('fang.uiLang', 'th');
@@ -21,20 +23,23 @@ themeSel.addEventListener('change', () => {
   save('fang.theme', themeSel.value);
 });
 
-// Screens are addressed by the URL hash (#home, #captions, #speak, #sign, #settings), so the
-// phone's back button returns to the home screen and each mode can be bookmarked.
-const SCREENS = ['home', 'captions', 'speak', 'sign', 'settings'];
+// Screens are addressed by the URL hash (#home, #captions, #speak, #sign, #settings, #history),
+// so the phone's back button returns to the home screen and each mode can be bookmarked.
+// #history/<id> opens one saved transcript.
+const SCREENS = ['home', 'captions', 'speak', 'sign', 'settings', 'history'];
+const TAB_OF = { history: 'captions' }; // screens without their own tab light up their parent's
 const tabs = document.querySelectorAll('[role="tab"]');
 function showScreen(name) {
   const id = `tab-${name}`;
   for (const s of SCREENS) document.getElementById(`tab-${s}`).hidden = s !== name;
-  for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.tab === id));
+  const tabId = `tab-${TAB_OF[name] || name}`;
+  for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.tab === tabId));
   document.getElementById('open-settings').classList.toggle('active', name === 'settings');
   window.scrollTo(0, 0);
   document.dispatchEvent(new CustomEvent('tabchange', { detail: id }));
 }
 function route() {
-  const name = location.hash.slice(1);
+  const name = location.hash.slice(1).split('/')[0];
   showScreen(SCREENS.includes(name) ? name : 'home');
 }
 for (const tab of tabs) {
@@ -45,6 +50,8 @@ window.addEventListener('hashchange', route);
 initCaptions();
 initSpeak();
 initSign();
+initHistory();
+initSpeechPack();
 
 // Settings that also have a control inside a mode stay in step with it. The mode's own control
 // keeps doing the work; the settings copy just forwards to it.

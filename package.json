@@ -4,7 +4,7 @@
   "description": "Fang: Thai captions, type-to-speak and TSL camera prototype",
   "scripts": {
     "start": "npx --yes http-server -c-1 -p 8080 .",
-    "test": "node --test tests/unit.test.mjs tests/training.test.mjs",
+    "test": "node --test tests/unit.test.mjs tests/training.test.mjs tests/captions.test.mjs",
     "e2e": "node tests/e2e.mjs"
   },
   "author": "",
@@ -13,6 +13,7 @@
     "@mediapipe/tasks-vision": "^1.1.1"
   },
   "devDependencies": {
+    "onnxruntime-web": "1.30.0",
     "playwright": "^1.56.1"
   },
   "type": "module",

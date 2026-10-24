@@ -11,7 +11,7 @@ const server = await serve(root);
 const base = `http://localhost:${server.address().port}/`;
 const args = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
 if (video) args.push(`--use-file-for-fake-video-capture=${path.resolve(video)}`);
-const browser = await chromium.launch({ args });
+const browser = await chromium.launch({ args, executablePath: process.env.CHROMIUM_PATH || undefined });
 const errors = [];
 
 try {
