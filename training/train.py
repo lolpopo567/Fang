@@ -10,6 +10,7 @@ Only numpy is required, so it runs anywhere, including Colab.
 """
 
 import argparse
+import base64
 import json
 import random
 import sys
@@ -120,6 +121,23 @@ def predict(params, x):
     return p / p.sum(1, keepdims=True)
 
 
+def encode_matrix(w):
+    """Compact int8 form of a weight matrix for the model JSON: W[r][c] = q8[r * cols + c] * scale[r]."""
+    w = np.asarray(w, dtype=np.float64)
+    scale = np.abs(w).max(1) / 127
+    scale[scale == 0] = 1.0
+    q = np.clip(np.round(w / scale[:, None]), -127, 127).astype(np.int8)
+    return {"q8": base64.b64encode(q.tobytes()).decode("ascii"), "rows": w.shape[0], "cols": w.shape[1], "scale": scale.tolist()}
+
+
+def decode_matrix(w):
+    """A weight matrix from the model JSON, plain (list of rows) or int8 (see encode_matrix)."""
+    if isinstance(w, dict):
+        q = np.frombuffer(base64.b64decode(w["q8"]), dtype=np.int8).reshape(w["rows"], w["cols"])
+        return q * np.array(w["scale"])[:, None]
+    return np.array(w)
+
+
 def model_probs(m, frames):
     """Reference for MlpModel.predict in js/sign/model.js (minus the no-hands check): class probabilities."""
     if m.get("fps"):
@@ -133,14 +151,21 @@ def model_probs(m, frames):
         frames = picked
     if m.get("skipEmptyFrames"):
         frames = [f for f in frames if f["hands"]]
-    x = (np.array(sequence_features(frames, m.get("features", 1), bool(m.get("canonicalHand")), bool(m.get("handPosition")))) - m["mean"]) / m["std"]
-    layers = m.get("layers") or [{"W": m["W1"], "b": m["b1"]}, {"W": m["W2"], "b": m["b2"]}]
-    for i, layer in enumerate(layers):
-        x = np.array(layer["W"]) @ x + layer["b"]
-        if i < len(layers) - 1:
-            x = np.maximum(x, 0)
-    p = np.exp(x - x.max())
-    return p / p.sum()
+    opts = (m.get("features", 1), bool(m.get("canonicalHand")), bool(m.get("handPosition")))
+    views = [False, True] if m.get("mirrorAverage") else [False]
+    xs = [(np.array(sequence_features(frames, *opts, mirrored=v)) - m["mean"]) / m["std"] for v in views]
+    nets = m.get("ensemble") or [{"layers": m.get("layers") or [{"W": m["W1"], "b": m["b1"]}, {"W": m["W2"], "b": m["b2"]}]}]
+    probs = []
+    for net in nets:
+        layers = [(decode_matrix(layer["W"]), np.array(layer["b"])) for layer in net["layers"]]
+        for x in xs:
+            for i, (w, b) in enumerate(layers):
+                x = w @ x + b
+                if i < len(layers) - 1:
+                    x = np.maximum(x, 0)
+            p = np.exp(x - x.max())
+            probs.append(p / p.sum())
+    return np.mean(probs, 0)
 
 
 def main():

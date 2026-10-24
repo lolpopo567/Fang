@@ -19,6 +19,9 @@ Training uses PyTorch (pip install torch) for an MLP with two hidden layers and 
 every batch afresh: mirrored (left-handed) copies, small rotations, zoom and shifts of the whole frame,
 landmark jitter, shorter spans and dropped frames or hands, like a phone tracker that loses a hand now and then.
 The features are computed in torch for speed; the script checks them against npfeatures.py before training.
+It trains --members nets with different seeds; the app averages their probabilities ("ensemble"), each on the window
+and on its mirror image ("mirrorAverage"). Weights ship as int8 with a scale per row (train.encode_matrix), and the
+reported scores are for those int8 weights.
 
 License: PopSign ASL v1.0 is CC BY 4.0, so the model may be used commercially with credit.
 """
@@ -28,6 +31,7 @@ import json
 import math
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -38,8 +42,8 @@ from torch import nn
 sys.path.insert(0, str(Path(__file__).parent))
 from npfeatures import app_frame_vectors, mirror, window_features  # noqa: E402
 from popsign import load_cache  # noqa: E402
-from train import MODEL_FORMAT  # noqa: E402
-from train_tsl51 import evaluate  # noqa: E402
+from train import MODEL_FORMAT, decode_matrix, encode_matrix  # noqa: E402
+from train_tsl51 import predict  # noqa: E402
 
 LICENSE = (
     "Trained on PopSign ASL v1.0 (Starner et al., NeurIPS 2023; huggingface.co/datasets/sign/popsign-images), "
@@ -161,18 +165,19 @@ def main():
     ap.add_argument("--fps", type=float, default=5.0)
     ap.add_argument("--hidden", default="512,256")
     ap.add_argument("--dropout", type=float, default=0.2)
-    ap.add_argument("--epochs", type=int, default=60)
+    ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--weight-decay", type=float, default=1e-4)
     ap.add_argument("--label-smoothing", type=float, default=0.1)
-    ap.add_argument("--repeat-first", type=int, default=1, help="use the first cache's training clips this many times")
+    ap.add_argument("--repeat-first", type=int, default=4, help="use the first cache's training clips this many times")
+    ap.add_argument("--members", type=int, default=4, help="nets trained with different seeds; the app averages them")
+    ap.add_argument("--no-mirror-average", dest="mirror_average", action="store_false", help="don't also score the mirrored window")
+    ap.add_argument("--no-q8", dest="q8", action="store_false", help="store weights as plain numbers, not int8")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
-    torch.manual_seed(args.seed)
-    rng = np.random.default_rng(args.seed)
 
     clips, meta = [], {k: [] for k in ("label", "signer", "split", "source")}
     subsets = []
@@ -208,11 +213,80 @@ def main():
     del f0
     std[std < 1e-4] = 1.0
     hidden = [int(h) for h in args.hidden.split(",")]
+    members = [train_net(x_tr, len_tr, y_tr, rows, mean, std, hidden, len(labels), args, args.seed + k) for k in range(args.members)]
+    mean, std = mean.double().numpy(), std.double().numpy()
+
+    def probs(h, lengths, mirrored=args.mirror_average):
+        """What the app computes: softmax averaged over the members and, with mirrorAverage, the mirrored window."""
+        views = [h, mirror_hands(h)] if mirrored else [h]
+        xs = [(features(v, lengths).double().numpy() - mean) / std for v in views]
+        return np.mean([predict(layers, x) for layers in members for x in xs], 0)
+
+    signers = lambda idx: sorted({meta["signer"][i] for i in idx})  # noqa: E731
+    report = {
+        "dataset": f"PopSign ASL v1.0 ({', '.join(subsets)}; CC BY 4.0)",
+        "labels": len(labels),
+        "split": f"signer-held-out: PopSign's {'+'.join(sorted(train_splits))} split(s) ({len(signers(train_idx))} signers) vs its {test_split} split ({len(signers(test_idx))} signers)",
+        "train_clips": len(train_idx),
+        "test_clips": len(test_idx),
+        "test_clips_with_hands": len(test_with_hands),
+        "hidden": hidden,
+        "members": args.members,
+        "mirror_average": args.mirror_average,
+    }
+    report.update(score(probs(x_te, len_te), y_te, labels))
+    ng = np.array([meta["source"][i] == 0 for i in test_with_hands])
+    if ng.any() and not ng.all():
+        sub = score(probs(x_te[torch.from_numpy(ng)], len_te[torch.from_numpy(ng)]), y_te[ng], labels)
+        report[f"test_accuracy_{subsets[0]}_only"] = sub["test_accuracy"]
+        report[f"test_top3_accuracy_{subsets[0]}_only"] = sub["test_top3_accuracy"]
+    report["test_accuracy_single_net"] = score(probs_single(members[0], x_te, len_te, mean, std), y_te, labels)["test_accuracy"]
+    report["test_accuracy_mirrored"] = score(probs(mirror_hands(x_te), len_te), y_te, labels)["test_accuracy"]
+    train_sub = torch.from_numpy(np.random.default_rng(args.seed).permutation(len(train_idx))[:8000])
+    # Same clips the nets trained on, unaugmented: the gap to the test score is how much they fit the training signers.
+    report["train_accuracy"] = score(probs(x_tr[train_sub], len_tr[train_sub]), y_tr[train_sub].numpy(), labels)["test_accuracy"]
+
+    nets = [{"layers": [{"W": encode_matrix(w) if args.q8 else w.round(5).tolist(), "b": b.round(5).tolist()} for w, b in layers]} for layers in members]
+    model = {
+        "format": MODEL_FORMAT,
+        "language": "ase",
+        "labels": labels,
+        "display": {l: DISPLAY.get(l, l) for l in labels},
+        "window": args.window,
+        "fps": args.fps,
+        "features": FEATURES,
+        "handPosition": True,
+        "skipEmptyFrames": True,
+        "mirrorAverage": args.mirror_average,
+        "license": LICENSE,
+        "mean": mean.round(5).tolist(),
+        "std": std.round(5).tolist(),
+        **({"ensemble": nets} if len(nets) > 1 else nets[0]),
+        "report": report,
+    }
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(model, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(json.dumps({k: v for k, v in report.items() if k != "per_class"}, ensure_ascii=False, indent=1))
+    print(f"wrote {out} ({out.stat().st_size // 1024} KB)")
+
+
+def mirror_hands(h):
+    """Raw hands as a left-handed signer would make them: swap the two hand slots and flip x."""
+    m = h.flip(2)
+    m[..., 0] = 1 - m[..., 0]
+    return m
+
+
+def train_net(x_tr, len_tr, y_tr, rows, mean, std, hidden, n_labels, args, seed):
+    """One MLP; returns its layers as [(W, b)] numpy arrays."""
+    torch.manual_seed(seed)
+    rng = np.random.default_rng(seed)
     dims = [len(mean), *hidden]
     mods = []
     for a, b in zip(dims[:-1], dims[1:]):
         mods += [nn.Linear(a, b), nn.ReLU(), nn.Dropout(args.dropout)]
-    net = nn.Sequential(*mods, nn.Linear(dims[-1], len(labels)))
+    net = nn.Sequential(*mods, nn.Linear(dims[-1], n_labels))
     opt = torch.optim.AdamW(net.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     steps = args.epochs * math.ceil(len(rows) / args.batch)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=steps)
@@ -225,50 +299,34 @@ def main():
             loss.backward()
             opt.step()
             sched.step()
-        print(f"epoch {epoch + 1}: loss {loss.item():.3f} ({time.time() - start:.0f} s)", file=sys.stderr, flush=True)
+        print(f"net seed {seed}, epoch {epoch + 1}: loss {loss.item():.3f} ({time.time() - start:.0f} s)", file=sys.stderr, flush=True)
     net.eval()
-
     layers = [(m.weight.detach().double().numpy(), m.bias.detach().double().numpy()) for m in net if isinstance(m, nn.Linear)]
-    mean, std = mean.double().numpy(), std.double().numpy()
-    score = lambda h, lengths, y: evaluate(layers, mean, std, features(h, lengths).double().numpy(), y, labels)  # noqa: E731
+    if args.q8:
+        # Score what ships: the int8 weights, decoded.
+        layers = [(decode_matrix(encode_matrix(w)), b) for w, b in layers]
+    return layers
 
-    signers = lambda idx: sorted({meta["signer"][i] for i in idx})  # noqa: E731
-    report = {
-        "dataset": f"PopSign ASL v1.0 ({', '.join(subsets)}; CC BY 4.0)",
-        "labels": len(labels),
-        "split": f"signer-held-out: PopSign's {'+'.join(sorted(train_splits))} split(s) ({len(signers(train_idx))} signers) vs its {test_split} split ({len(signers(test_idx))} signers)",
-        "train_clips": len(train_idx),
-        "test_clips": len(test_idx),
-        "test_clips_with_hands": len(test_with_hands),
-        "hidden": hidden,
-    }
-    report.update(score(x_te, len_te, y_te))
-    hf = x_te.flip(2)
-    hf[..., 0] = 1 - hf[..., 0]
-    report["test_accuracy_mirrored"] = score(hf, len_te, y_te)["test_accuracy"]
 
-    r = lambda a: a.round(5).tolist()  # noqa: E731
-    model = {
-        "format": MODEL_FORMAT,
-        "language": "ase",
-        "labels": labels,
-        "display": {l: DISPLAY.get(l, l) for l in labels},
-        "window": args.window,
-        "fps": args.fps,
-        "features": FEATURES,
-        "handPosition": True,
-        "skipEmptyFrames": True,
-        "license": LICENSE,
-        "mean": r(mean),
-        "std": r(std),
-        "layers": [{"W": r(w), "b": r(b)} for w, b in layers],
-        "report": report,
+def probs_single(layers, h, lengths, mean, std):
+    return predict(layers, (features(h, lengths).double().numpy() - mean) / std)
+
+
+def score(prob, y, labels):
+    pred = prob.argmax(1)
+    top3 = (np.argsort(-prob, 1)[:, :3] == y[:, None]).any(1)
+    per_class = {
+        labels[c]: {"n": int((y == c).sum()), "accuracy": round(float((pred[y == c] == c).mean()), 4)}
+        for c in range(len(labels))
+        if (y == c).any()
     }
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(model, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(json.dumps({k: v for k, v in report.items() if k != "per_class"}, ensure_ascii=False, indent=1))
-    print(f"wrote {out} ({out.stat().st_size // 1024} KB)")
+    confusions = Counter((labels[a], labels[b]) for a, b in zip(y, pred) if a != b)
+    return {
+        "test_accuracy": round(float((pred == y).mean()), 4),
+        "test_top3_accuracy": round(float(top3.mean()), 4),
+        "per_class": per_class,
+        "top_confusions": [{"true": a, "predicted": b, "count": n} for (a, b), n in confusions.most_common(15)],
+    }
 
 
 if __name__ == "__main__":

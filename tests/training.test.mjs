@@ -21,11 +21,11 @@ test('JS and Python features match', () => {
   // Portrait and landscape frames, plus one frame without the field (old recordings).
   sample.frames.forEach((f, i) => { if (i % 3 === 0) f.aspect = 0.5625; else if (i % 3 === 1) f.aspect = 1.333; });
   fs.writeFileSync(data, JSON.stringify(sample));
-  const cases = [[1, false, false, 384], [2, false, false, 896], [2, true, false, 896], [2, false, true, 938], [2, true, true, 938]];
-  for (const [version, canonical, position, dim] of cases) {
+  const cases = [[1, false, false, false, 384], [2, false, false, false, 896], [2, true, false, false, 896], [2, false, true, false, 938], [2, true, true, false, 938], [2, false, true, true, 938]];
+  for (const [version, canonical, position, mirrored, dim] of cases) {
     const pyBool = (b) => (b ? 'True' : 'False');
-    const pyOut = JSON.parse(py(`import json,sys; sys.path.insert(0,"training"); from features import sequence_features; print(json.dumps(sequence_features(json.load(open(sys.argv[1]))["frames"], ${version}, ${pyBool(canonical)}, ${pyBool(position)})))`, data));
-    const jsOut = sequenceFeatures(sample.frames, { version, canonicalHand: canonical, handPosition: position });
+    const pyOut = JSON.parse(py(`import json,sys; sys.path.insert(0,"training"); from features import sequence_features; print(json.dumps(sequence_features(json.load(open(sys.argv[1]))["frames"], ${version}, ${pyBool(canonical)}, ${pyBool(position)}, ${pyBool(mirrored)})))`, data));
+    const jsOut = sequenceFeatures(sample.frames, { version, canonicalHand: canonical, handPosition: position, mirrored });
     assert.equal(jsOut.length, dim);
     assert.equal(pyOut.length, dim);
     jsOut.forEach((v, i) => assert.ok(Math.abs(v - pyOut[i]) < 1e-9, `v${version} feature ${i}: ${v} vs ${pyOut[i]}`));
@@ -123,11 +123,41 @@ test('trained model runs in JS and recognizes held-out synthetic data', async ()
   assert.ok(correct / samples.length > 0.9, `js accuracy ${correct}/${samples.length}`);
 });
 
+test('ensemble, mirrorAverage and int8 weights give the same probabilities in JS and Python', async () => {
+  const modelPath = path.join(tmp, 'ensemble.json');
+  const code = [
+    'import json,sys; sys.path.insert(0,"training"); import numpy as np',
+    'from train import encode_matrix, decode_matrix',
+    'rng=np.random.default_rng(3); d=7*134',
+    'net=lambda: {"layers":[{"W":encode_matrix(rng.normal(0,0.05,(16,d))),"b":rng.normal(0,0.1,16).tolist()},{"W":encode_matrix(rng.normal(0,0.3,(3,16))),"b":[0.1,0,-0.1]}]}',
+    'w=rng.normal(0,1,(5,9)); e=encode_matrix(w); assert np.abs(decode_matrix(e)-w).max() <= np.abs(w).max()/127/2+1e-12',
+    'm={"format":"fang-mlp-v1","labels":["a","b","c"],"display":{"a":"a","b":"b","c":"c"},"window":8,"fps":5,"features":2,"handPosition":True,"skipEmptyFrames":True,"mirrorAverage":True,',
+    '   "mean":[0.0]*d,"std":[1.0]*d,"ensemble":[net(),net()]}',
+    'json.dump(m, open(sys.argv[1],"w"))'
+  ].join('\n');
+  py(code, modelPath);
+  const json = JSON.parse(fs.readFileSync(modelPath, 'utf8'));
+  const data = path.join(tmp, 'ensemble-frames.json');
+  execFileSync('python3', ['tests/make_synthetic.py', data, '5'], { cwd: root });
+  const frames = JSON.parse(fs.readFileSync(data, 'utf8')).samples[2].frames.slice(0, 20);
+  frames[4].hands.push({ ...frames[4].hands[0], handedness: 'Left' });
+  frames.forEach((f, i) => { f.aspect = 0.75; f.t = i * 90; });
+  fs.writeFileSync(data, JSON.stringify(frames));
+  const probs = JSON.parse(py('import json,sys; sys.path.insert(0,"training"); from train import model_probs; print(json.dumps(model_probs(json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))).tolist()))', modelPath, data));
+  const res = await new MlpModel(json).predict(frames);
+  const js = Object.fromEntries([res, ...res.alternatives].map((r) => [r.label, r.confidence]));
+  json.labels.forEach((l, c) => assert.ok(Math.abs(js[l] - probs[c]) < 1e-9, `${l}: ${js[l]} vs ${probs[c]}`));
+  // Mirror averaging really changes the result, so the test would catch it being skipped.
+  const plain = await new MlpModel({ ...json, mirrorAverage: false }).predict(frames);
+  assert.notEqual(plain.confidence, res.confidence);
+});
+
 for (const name of ['tsl-model.json', 'asl-model.json']) test(`bundled ${name} gives the same probabilities in JS and Python`, async (t) => {
   const modelPath = path.join(root, 'models', name);
   if (!fs.existsSync(modelPath)) return t.skip('no bundled model');
   const json = JSON.parse(fs.readFileSync(modelPath, 'utf8'));
-  assert.equal(json.labels.length, (json.layers?.at(-1).W ?? json.W2).length);
+  const lastW = (json.ensemble?.[0].layers ?? json.layers)?.at(-1).W ?? json.W2;
+  assert.equal(json.labels.length, lastW.rows ?? lastW.length);
   assert.ok(json.labels.every((l) => typeof json.display[l] === 'string'));
   const data = path.join(tmp, 'bundled.json');
   execFileSync('python3', ['tests/make_synthetic.py', data, '3'], { cwd: root });

@@ -144,23 +144,29 @@ pip install mediapipe huggingface_hub pyarrow pillow numpy torch
 # ~35 min for non-game, ~2 h 20 min for game on 4 CPUs
 python training/popsign.py prepare --subset non-game --out data/popsign.npz
 python training/popsign.py prepare --subset game --out data/popsign-game.npz
-# score on the 8 validation signers (for comparing settings)
-python training/train_popsign.py data/popsign.npz data/popsign-game.npz --repeat-first 4
-# the shipped model: train + validation signers, scored on the 8 test signers (~30 min, needs ~10 GB RAM)
-python training/train_popsign.py data/popsign.npz data/popsign-game.npz --repeat-first 4 --final
+# score on the 8 validation signers (for comparing settings; --members 1 is 4x faster)
+python training/train_popsign.py data/popsign.npz data/popsign-game.npz
+# the shipped model: 4 nets on train + validation signers, scored once on the 8 test signers (~1 h 45 min, ~10 GB RAM)
+python training/train_popsign.py data/popsign.npz data/popsign-game.npz --final
 ```
 
-Results (2026-10-22). Every number is for signers the model never trained on, and counts only clips where the
+Results (2026-10-24). Every number is for signers the model never trained on, and counts only clips where the
 tracker saw a hand in at least 2 frames (about 75% of clips). In the app the others would show "no sign".
 "Non-game" clips are the careful ones (one sign per recording); "game" clips were recorded while playing a game.
 
 | Model | Trained on | Scored on | Signs | Top-1 | Top-3 |
 |---|---|---|---|---|---|
 | v1 (2026-10-21) | non-game, train + validation | non-game test clips (2,412) | 246 | 45% | 64% |
-| **v2, shipped** | non-game + game, train + validation | non-game test clips (2,412) | 250 | **57%** | **76%** |
-| **v2, shipped** | non-game + game, train + validation | all test clips (27,281) | 250 | **62%** | **80%** |
+| v2 (2026-10-22) | non-game + game, train + validation | non-game test clips (2,412) | 250 | 57% | 76% |
+| v2 | non-game + game, train + validation | all test clips (27,281) | 250 | 62% | 80% |
+| **v3, shipped** | same, 4 nets averaged, mirror averaging | non-game test clips (2,412) | 250 | **60%** | **77%** |
+| **v3, shipped** | same, 4 nets averaged, mirror averaging | all test clips (27,281) | 250 | **64%** | **82%** |
 | v1 settings | non-game, train | non-game validation (6,218) | 244 | 32% | 48% |
 | v2 settings | non-game + game, train | non-game validation (6,220) | 250 | 40% | 59% |
+| v2 settings | non-game + game, train | all validation (27,511) | 250 | 55% | 74% |
+| v3 settings* | non-game + game, train | all validation (27,511) | 250 | 57% | 77% |
+
+\* Tuning run: 4 nets that also had the finger features (dropped from v3 because alone they gave only +0.4).
 
 Random guessing would be under 0.5%. The Hugging Face copy's non-game test split covers only 115 of the signs; the
 validation rows cover 208, so they are the fairer estimate for the whole vocabulary. Signs that look alike from the
@@ -183,6 +189,23 @@ What changed in v2, measured on the validation signers (non-game clips):
   before tracking (hands found in 59% vs 58% of frames).
 - No "no sign" class: PopSign has none. With hands in view but not signing, the app will still name a sign, usually
   with low confidence ("may be wrong").
+What changed in v3 (2026-10-24), and the overfitting checks. Every setting was compared on the validation signers
+only; the test signers were scored once, for the shipped model.
+
+- **Is it overfitting?** On clips it trained on (unaugmented) v3 gets 69%, on the unseen test signers 64%: a 5-point
+  gap, so it is not memorising the training clips. The remaining errors come from signs that look alike from the
+  hands and from how differently people sign. Making the nets fight overfitting harder made them worse on
+  validation: dropout 0.4 with weight decay 1e-3 (55% → 52%), dropout on the inputs (→ 53%).
+- **4 nets averaged** (`ensemble`), each trained with a different seed: +2 points over one net (single net 62.3% on
+  test, ensemble 64.5%). Averaging cancels each net's own random mistakes, which is the safest way to gain here.
+- **Mirror averaging** (`mirrorAverage`): each net also sees the window mirrored, as a left-handed signer would make
+  it, and the two are averaged: +0.5 points on validation.
+- **Compact weights:** weights are stored as int8 with a scale per row (`q8`), so the 4 nets take 3.7 MB, less than
+  v2's single net (5.5 MB). Scores above are for the int8 weights.
+- Tried, no gain (within ±0.5 points, the spread between seeds): averaging the weights over training (EMA), mixup,
+  label smoothing 0 or 0.2 instead of 0.1, 1024 + 512 or 512 + 512 + 256 units, finger-distance and finger-bend
+  features (+0.4). Tracking the frames again in video mode or with flipped images finds hands in only 1-3% more
+  frames, not worth reprocessing.
 - **Next:** the original full-rate videos (the tracker would see hands in far more frames), body and face points so
   the model knows where the hand is relative to the face, and testing on real phones.
 - **License:** PopSign ASL v1.0 is CC BY 4.0. Credit: Thad Starner et al., "PopSign ASL v1.0: An Isolated American Sign
