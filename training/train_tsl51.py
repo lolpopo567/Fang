@@ -10,7 +10,7 @@ accuracy is for a person, camera and room the model did not train on. With --app
 scored on landmarks from the app's own hand tracker, which is closest to what the app sees on a phone.
 
 Each training example is what the app would hold at one moment: the last window/fps seconds of a clip
-as seen by a camera running at a random 8-30 fps, resampled to `window` frames, with random rotation,
+as seen by a camera running at a random 5-30 fps, resampled to `window` frames, with random rotation,
 stretch, jitter and dropped hands. Needs PyTorch (CPU is fine, about 10 minutes).
 
 License: TSL-51 is CC BY-NC-SA 4.0, so the trained model is for non-commercial use only.
@@ -26,7 +26,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 from train import MODEL_FORMAT  # noqa: E402
-from tsl51 import frame_vectors, load_cache, load_tracked, main_hand_is_left, mirror, window_features  # noqa: E402
+from tsl51 import frame_vectors, label_hands, load_cache, load_tracked, main_hand_is_left, mirror, window_features  # noqa: E402
 
 NULL = "null_act"
 DATA_FPS = 30.0  # every TSL-51 clip
@@ -72,6 +72,10 @@ class Windows:
         sx, sy = rng.normal(1, 0.08, 2)
         h[..., 0] = (c * x - s * y) * sx + 0.5
         h[..., 1] = (s * x + c * y) * sy + 0.5
+        if self.args.hand_position:  # camera framing: where the signer sits in the frame and how near
+            zoom, (dx, dy) = rng.normal(1, 0.05), rng.normal(0, 0.025, 2)
+            h[..., 0] = (h[..., 0] - 0.5) * zoom + 0.5 + dx
+            h[..., 1] = (h[..., 1] - 0.5) * zoom + 0.5 + dy
         h[..., 2] *= rng.normal(1, 0.2)
         h += rng.normal(0, 0.003, h.shape).astype(np.float32)
         if rng.random() < 0.5:  # the tracker loses a hand now and then
@@ -91,7 +95,7 @@ class Windows:
         seen = ~np.isnan(h).all(axis=(1, 2, 3))
         if seen.sum() >= 2:
             h = h[seen]  # skipEmptyFrames
-        vecs = frame_vectors(h, aspect)
+        vecs = frame_vectors(h, aspect, self.args.hand_position)
         if main_hand_is_left(h, aspect):
             vecs = mirror(vecs)  # canonicalHand
         return window_features(vecs, 2)
@@ -173,11 +177,12 @@ def main():
     ap.add_argument("--app-test", default="", help="output of `tsl51.py track`: also score user_01 on the app tracker's landmarks")
     ap.add_argument("--window", type=int, default=24, help="frames per prediction")
     ap.add_argument("--fps", type=float, default=15, help="the window covers window/fps seconds, at any camera frame rate")
-    ap.add_argument("--min-device-fps", type=float, default=8)
+    ap.add_argument("--min-device-fps", type=float, default=5)
     ap.add_argument("--max-device-fps", type=float, default=30)
+    ap.add_argument("--no-hand-position", dest="hand_position", action="store_false", help="hand shapes only, not where the hands are")
     ap.add_argument("--hidden", default="256,256")
-    ap.add_argument("--dropout", type=float, default=0.3)
-    ap.add_argument("--epochs", type=int, default=10)
+    ap.add_argument("--dropout", type=float, default=0.5)
+    ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--weight-decay", type=float, default=1e-4)
     ap.add_argument("--threads", type=int, default=4)
@@ -208,6 +213,7 @@ def main():
         "window": args.window,
         "fps": args.fps,
         "hidden": args.hidden,
+        "hand_position": args.hand_position,
     }
     if test_idx:
         y_te = np.array([index[meta["label"][i]] for i in test_idx])
@@ -216,7 +222,8 @@ def main():
         tracked = load_tracked(args.app_test) if args.app_test else {}
         idx = [i for i in test_idx if str(meta["original"][i]) in tracked]
         if idx:
-            x_app = win.batch([(tracked[str(meta["original"][i])], meta["aspect"][i], meta["label"][i]) for i in idx], False)
+            hands = [label_hands(*tracked[str(meta["original"][i])], float(meta["aspect"][i])) for i in idx]
+            x_app = win.batch([(h, meta["aspect"][i], meta["label"][i]) for h, i in zip(hands, idx)], False)
             app = evaluate(layers, mean, std, x_app, np.array([index[meta["label"][i]] for i in idx]), labels)
             report["app_tracker"] = {"test_clips": len(idx), **{k: app[k] for k in ("test_accuracy", "test_top3_accuracy", "top_confusions")}}
 
@@ -229,6 +236,7 @@ def main():
         "fps": args.fps,
         "features": 2,
         "canonicalHand": True,
+        "handPosition": args.hand_position,
         "skipEmptyFrames": True,
         "license": "Trained on TSL-51 (huggingface.co/datasets/Namonpas/thai-sign-language-tsl51), CC BY-NC-SA 4.0: non-commercial use only.",
         "mean": mean.round(5).tolist(),
