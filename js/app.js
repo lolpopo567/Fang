@@ -3,6 +3,7 @@ import { load, save } from './store.js';
 import { initCaptions } from './captions.js';
 import { initSpeak } from './speak.js';
 import { initSign } from './sign/sign.js';
+import { initAlerts } from './alerts/alerts.js';
 
 const langSel = document.getElementById('ui-lang');
 langSel.value = load('fang.uiLang', 'th');
@@ -21,9 +22,9 @@ themeSel.addEventListener('change', () => {
   save('fang.theme', themeSel.value);
 });
 
-// Screens are addressed by the URL hash (#home, #captions, #speak, #sign, #settings), so the
+// Screens are addressed by the URL hash (#home, #captions, #speak, #sign, #alerts, #settings), so the
 // phone's back button returns to the home screen and each mode can be bookmarked.
-const SCREENS = ['home', 'captions', 'speak', 'sign', 'settings'];
+const SCREENS = ['home', 'captions', 'speak', 'sign', 'alerts', 'settings'];
 const tabs = document.querySelectorAll('[role="tab"]');
 function showScreen(name) {
   const id = `tab-${name}`;
@@ -45,6 +46,7 @@ window.addEventListener('hashchange', route);
 initCaptions();
 initSpeak();
 initSign();
+initAlerts();
 
 // Settings that also have a control inside a mode stay in step with it. The mode's own control
 // keeps doing the work; the settings copy just forwards to it.

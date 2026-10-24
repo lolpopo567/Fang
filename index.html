@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f3f6fb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0f1e" media="(prefers-color-scheme: dark)">
-  <meta name="description" content="Live Thai captions, type-to-speak and a Thai Sign Language camera prototype for deaf and hard-of-hearing people.">
+  <meta name="description" content="Live Thai captions, type-to-speak, sound alerts and a Thai Sign Language camera prototype for deaf and hard-of-hearing people.">
   <title>Fang ฟัง</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/favicon-32.png" type="image/png" sizes="32x32">
@@ -51,6 +51,11 @@
         <a class="mode-card tone-violet" href="#sign">
           <span class="mode-icon" aria-hidden="true"><span class="icon i-hand"></span></span>
           <span class="mode-text"><strong><span data-i18n="nav.sign"></span> <span class="badge" data-i18n="home.beta"></span></strong><span data-i18n="home.signDesc"></span></span>
+          <span class="icon i-chevron chevron" aria-hidden="true"></span>
+        </a>
+        <a class="mode-card tone-rose" href="#alerts">
+          <span class="mode-icon" aria-hidden="true"><span class="icon i-bell-ring"></span></span>
+          <span class="mode-text"><strong data-i18n="nav.alerts"></strong><span data-i18n="home.alertsDesc"></span></span>
           <span class="icon i-chevron chevron" aria-hidden="true"></span>
         </a>
       </div>
@@ -159,6 +164,31 @@
       </details>
     </section>
 
+    <!-- Sound alerts -->
+    <section id="tab-alerts" class="tab tone-rose" role="tabpanel" aria-labelledby="nav-alerts" hidden>
+      <header class="screen-head tone-rose">
+        <span class="tile" aria-hidden="true"><span class="icon i-bell-ring"></span></span>
+        <div><h2 class="screen-title" data-i18n="nav.alerts"></h2><p class="screen-sub" data-i18n="home.alertsDesc"></p></div>
+      </header>
+      <div class="notice warn"><span class="icon i-alert" aria-hidden="true"></span><span data-i18n="alerts.limits"></span></div>
+      <div class="listen-card">
+        <div class="orb" id="alerts-orb" aria-hidden="true"><span class="icon i-bell-ring"></span></div>
+        <p class="status" id="alerts-status" role="status"></p>
+        <button id="alerts-toggle" class="btn primary big wide ico i-mic" data-i18n="alerts.start"></button>
+        <button id="alerts-test" class="btn ghost ico i-zap" data-i18n="alerts.test"></button>
+      </div>
+      <h3 class="section-label" data-i18n="alerts.listeningFor"></h3>
+      <ul id="alerts-meters" class="meters"></ul>
+      <a class="btn ghost ico i-settings meters-edit" href="#settings" data-i18n="alerts.chooseSounds"></a>
+      <div class="log-head">
+        <h3 class="section-label" data-i18n="alerts.recent"></h3>
+        <button id="alerts-log-clear" class="btn ghost small ico i-trash" data-i18n="captions.clear"></button>
+      </div>
+      <ul id="alerts-log" class="alert-log"></ul>
+      <p class="log-empty" id="alerts-log-empty" data-i18n="alerts.noneYet"></p>
+      <p class="fineprint"><span class="icon i-lock" aria-hidden="true"></span><span data-i18n="alerts.privacy"></span></p>
+    </section>
+
     <!-- Settings -->
     <section id="tab-settings" class="tab" role="tabpanel" aria-labelledby="open-settings" hidden>
       <header class="screen-head tone-slate">
@@ -235,6 +265,27 @@
         </div>
       </fieldset>
 
+      <fieldset class="settings-group tone-rose">
+        <legend><span class="tile" aria-hidden="true"><span class="icon i-bell-ring"></span></span><span data-i18n="nav.alerts"></span></legend>
+        <label class="field">
+          <span data-i18n="alerts.sensitivity"></span>
+          <select id="alerts-sensitivity">
+            <option value="low" data-i18n="alerts.sensLow"></option>
+            <option value="normal" data-i18n="alerts.sensNormal"></option>
+            <option value="high" data-i18n="alerts.sensHigh"></option>
+          </select>
+        </label>
+        <div class="check-list">
+          <label class="check-row"><span class="icon i-zap" aria-hidden="true"></span><span data-i18n="alerts.optFlash"></span><input id="alerts-flash" type="checkbox"></label>
+          <label class="check-row"><span class="icon i-vibrate" aria-hidden="true"></span><span data-i18n="alerts.optVibrate"></span><input id="alerts-vibrate" type="checkbox"></label>
+          <label class="check-row"><span class="icon i-bell" aria-hidden="true"></span><span data-i18n="alerts.optNotify"></span><input id="alerts-notify" type="checkbox"></label>
+        </div>
+        <div class="field block">
+          <span data-i18n="alerts.sounds"></span>
+          <div class="check-list" id="alerts-sounds"></div>
+        </div>
+      </fieldset>
+
       <div class="about">
         <img src="img/kitten.webp" alt="" width="477" height="480">
         <div>
@@ -250,11 +301,19 @@
     <button id="nav-captions" class="tone-blue" role="tab" data-tab="tab-captions" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-captions"></span></span><span data-i18n="nav.captions"></span></button>
     <button id="nav-speak" class="tone-orange" role="tab" data-tab="tab-speak" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-keyboard"></span></span><span data-i18n="nav.speak"></span></button>
     <button id="nav-sign" class="tone-violet" role="tab" data-tab="tab-sign" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-hand"></span></span><span data-i18n="nav.sign"></span></button>
+    <button id="nav-alerts" class="tone-rose" role="tab" data-tab="tab-alerts" aria-selected="false"><span class="tab-icon" aria-hidden="true"><span class="icon i-bell-ring"></span></span><span data-i18n="nav.alertsShort"></span></button>
   </nav>
 
   <div id="bigtext" class="bigtext" hidden role="dialog" aria-modal="true">
     <p id="bigtext-content"></p>
     <button id="bigtext-close" class="btn ico i-close" data-i18n="speak.close"></button>
+  </div>
+
+  <div id="alert-flash" class="alert-flash" hidden role="alertdialog" aria-modal="true" aria-labelledby="alert-flash-name">
+    <span id="alert-flash-icon" class="icon i-bell-ring" aria-hidden="true"></span>
+    <p id="alert-flash-name" class="alert-flash-name"></p>
+    <p id="alert-flash-time" class="alert-flash-time"></p>
+    <button id="alert-flash-close" class="btn big ico i-close" data-i18n="alerts.dismiss"></button>
   </div>
 
   <script type="module" src="js/app.js"></script>
