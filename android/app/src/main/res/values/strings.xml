@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- In-app text lives in ui/Strings.kt (generated from the web app's js/i18n.js) so the language can switch instantly. -->
+    <string name="app_name">Fang ฟัง</string>
+</resources>

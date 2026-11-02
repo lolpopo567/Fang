@@ -57,6 +57,6 @@ css/icons.css                line icons from Lucide (ISC), drawn as CSS masks
 2. **Data:** use the recorder to collect consented samples with Thai deaf signers; more signers is what will raise accuracy most. Ask about TSL-ONE-S and NADT data.
 3. **First models (done, demos):** TSL-51 isolated-sign classifier and a PopSign ASL classifier, both scored on held-out signers. Next: test on phones, add more signers, try a sequence model and body/face points.
 4. **Online backend:** an API that implements the `OnlineRecognizer` request format, with no data retention by default.
-5. **Native Android (Kotlin + CameraX + MediaPipe)** as the project brief describes, if real-device performance in the browser isn't good enough. The feature format and recognizer interface carry over unchanged.
+5. **Native Android (Kotlin + CameraX + MediaPipe):** started in [`android/`](android/README.md) with all three modes and settings, sharing this app's models, text and icons. Next: test it on real phones.
 6. **Offline Thai captions:** an on-device Thai speech model (for example a Whisper variant fine-tuned for Thai) for privacy and use without internet.
 7. Continuous signing, face and body cues, sentence translation: long-term research, evaluated with qualified TSL users.
